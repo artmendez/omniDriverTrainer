@@ -18,25 +18,49 @@
             width: 100%;
             height: 100%;
         }
-        /* Top Center Timer Display */
-        #timer-box {
+        /* Top Center HUD Container */
+        #hud-top {
             position: absolute;
             top: 15px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.85);
-            color: #ffffff;
-            border: 2px solid #2196F3;
-            padding: 8px 24px;
-            border-radius: 8px;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 28px;
-            font-weight: bold;
-            letter-spacing: 1px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            gap: 12px;
             z-index: 10;
             user-select: none;
             pointer-events: none;
+        }
+        .hud-card {
+            background: rgba(0, 0, 0, 0.85);
+            color: #ffffff;
+            border: 2px solid #2196F3;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 18px;
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+            height: 52px;
+            box-sizing: border-box;
+        }
+        #timer-box {
+            font-size: 26px;
+            letter-spacing: 1px;
+        }
+        #dial-container {
+            width: 52px;
+            height: 52px;
+            padding: 0;
+            overflow: hidden;
+        }
+        #cannon-box {
+            font-size: 20px;
+            color: #ffeb3b;
+            border-color: #ffeb3b;
+            min-width: 90px;
         }
         #ui-overlay {
             position: absolute;
@@ -84,8 +108,16 @@
 </head>
 <body>
 
-    <!-- Countdown Timer -->
-    <div id="timer-box"><span id="timer-text">10.0</span>s</div>
+    <!-- Top HUD: Timer, Vehicle Orientation Dial & Cannon Angle -->
+    <div id="hud-top">
+        <div id="timer-box" class="hud-card"><span id="timer-text">10.0</span>s</div>
+        <div id="dial-container" class="hud-card">
+            <canvas id="dial-canvas" width="52" height="52"></canvas>
+        </div>
+        <div id="cannon-box" class="hud-card">
+            <span id="cannon-text">0.0°</span>
+        </div>
+    </div>
 
     <div id="ui-overlay">
         <h1>3D Perimeter Viewer</h1>
@@ -129,7 +161,7 @@
         const CANNON_SPEED = 2.5;                // Angular speed (2.5 rad/s)
         const MIN_CANNON_ANGLE = 0.0;            // 0 degrees
         const MAX_CANNON_ANGLE = Math.PI / 3;    // 60 degrees (in radians)
-        const LAUNCH_SPEED = 4.0;                // Muzzle velocity (4.0 m/s)
+        const LAUNCH_SPEED = 7.0;                // Muzzle velocity (7.0 m/s)
         const GRAVITY = 9.81;                    // Earth gravity acceleration (9.81 m/s²)
 
         let cannonPivot = null;
@@ -578,6 +610,91 @@
             updateCannon(delta);
         }
 
+        // --- UPDATE TOP HUD (DIAL & CANNON ANGLE) ---
+        function updateHUD() {
+            // Update Cannon Pitch Value Display
+            const cannonDeg = (cannonAngle * 180 / Math.PI).toFixed(1);
+            const cannonElem = document.getElementById('cannon-text');
+            if (cannonElem) {
+                cannonElem.innerText = cannonDeg + '°';
+            }
+
+            // Render Vehicle Orientation Dial
+            const canvas = document.getElementById('dial-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const r = 20;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Dial Base Outer Ring
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.strokeStyle = '#334466';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Highlight Active Rotation on Dial Border (J = Counter-Clockwise, L = Clockwise)
+            if (keys.j || keys.l) {
+                ctx.beginPath();
+                const arcStart = keys.j ? -Math.PI * 0.75 : -Math.PI * 0.25;
+                const arcEnd = keys.j ? -Math.PI * 0.25 : -Math.PI * 0.75;
+                ctx.arc(cx, cy, r, arcStart, arcEnd, keys.j);
+                ctx.strokeStyle = '#00E5FF'; // Bright Cyan rotation arc
+                ctx.lineWidth = 5;
+                ctx.stroke();
+            }
+
+            // Highlight Active Direction of Movement on Dial Border
+            const speed = Math.hypot(vx, vz);
+            if (speed > 0.05) {
+                const moveAngle = Math.atan2(vz, vx); // 2D canvas coordinates
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, moveAngle - 0.35, moveAngle + 0.35);
+                ctx.strokeStyle = '#4CAF50'; // Bright Green movement arc
+                ctx.lineWidth = 5;
+                ctx.stroke();
+            }
+
+            // Render Triangular Orientation Needle
+            let rotY = 0;
+            if (vehicleMesh) {
+                rotY = vehicleMesh.rotation.y;
+            }
+            // Canvas orientation angle mapping
+            const headingAngle = Math.atan2(Math.cos(rotY), Math.sin(rotY));
+
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(headingAngle);
+
+            const needleLen = 14;
+            const needleBase = 6;
+
+            ctx.beginPath();
+            ctx.moveTo(needleLen, 0);                 // Triangular Tip
+            ctx.lineTo(-needleBase, -needleBase);     // Rear Left
+            ctx.lineTo(-needleBase / 2, 0);           // Inset Rear Center
+            ctx.lineTo(-needleBase, needleBase);      // Rear Right
+            ctx.closePath();
+
+            ctx.fillStyle = '#FF3D00'; // Bright Orange-Red Needle
+            ctx.fill();
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Center Pivot Dot
+            ctx.beginPath();
+            ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fill();
+
+            ctx.restore();
+        }
+
         // --- OBSTACLE GENERATION & BOUNDS CHECK ---
         function spawnObstacles() {
             activeObstacles.forEach(obs => {
@@ -736,6 +853,7 @@
             updateTimer(delta);
             updateVehicle(delta);
             updateProjectile(delta);
+            updateHUD();
 
             renderer.render(scene, camera);
         }
