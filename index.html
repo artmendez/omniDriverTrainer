@@ -92,7 +92,8 @@
         <p><strong>POV Controls:</strong> <kbd>CTRL</kbd> + <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></p>
         <p><strong>Drive Vehicle:</strong> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></p>
         <p><strong>Rotate Vehicle:</strong> <kbd>J</kbd> (Left) | <kbd>L</kbd> (Right)</p>
-        <p><strong>Cannon Control:</strong> <kbd>I</kbd> (Elevate) | <kbd>K</kbd> (Depress)</p>
+        <p><strong>Cannon Pitch:</strong> <kbd>I</kbd> (Elevate) | <kbd>K</kbd> (Depress)</p>
+        <p><strong>Fire Cannon:</strong> <kbd>Spacebar</kbd></p>
         <p><strong>Active View:</strong> <span id="current-view" style="color:#2196F3;">1/2 (Center)</span></p>
     </div>
 
@@ -114,6 +115,7 @@
         let activeObstacles = [];
         let vehicleMesh = null;
         let vehicleRadius = 0.45;     // Dynamic bounding radius (updated on GLTF load)
+        let vehicleScaleFactor = 1.0;
         
         // --- VEHICLE CONTROL VARIABLES ---
         const MAX_SPEED = 2.0;        // Max speed (2 m/s)
@@ -123,12 +125,17 @@
         let vx = 0.0;                 // Velocity X
         let vz = 0.0;                 // Velocity Z
 
-        // --- CANNON VARIABLES ---
+        // --- CANNON & PROJECTILE VARIABLES ---
         const CANNON_SPEED = 2.5;                // Angular speed (2.5 rad/s)
         const MIN_CANNON_ANGLE = 0.0;            // 0 degrees
         const MAX_CANNON_ANGLE = Math.PI / 3;    // 60 degrees (in radians)
+        const LAUNCH_SPEED = 8.0;                // Muzzle velocity (8.0 m/s)
+        const GRAVITY = 9.81;                    // Earth gravity acceleration (9.81 m/s²)
+
         let cannonPivot = null;
+        let cannonMesh = null;
         let cannonAngle = 0.0;
+        let activeProjectile = null;
 
         // Key states
         const keys = {
@@ -278,20 +285,20 @@
 
                     // Scale to 0.69m width proportionally
                     const targetWidth = 0.69;
-                    const scaleFactor = targetWidth / (unscaledSize.x > 0 ? unscaledSize.x : 1);
-                    vehicleMesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
+                    vehicleScaleFactor = targetWidth / (unscaledSize.x > 0 ? unscaledSize.x : 1);
+                    vehicleMesh.scale.set(vehicleScaleFactor, vehicleScaleFactor, vehicleScaleFactor);
 
                     // World bounding dimensions
-                    const scaledWidth = unscaledSize.x * scaleFactor;
-                    const scaledLength = unscaledSize.z * scaleFactor;
+                    const scaledWidth = unscaledSize.x * vehicleScaleFactor;
+                    const scaledLength = unscaledSize.z * vehicleScaleFactor;
 
                     // Vehicle bounding radius on the XZ floor plane
                     vehicleRadius = Math.hypot(scaledWidth, scaledLength) / 2;
 
                     // Center vehicle mesh on floor
-                    vehicleMesh.position.x = -unscaledCenter.x * scaleFactor;
-                    vehicleMesh.position.z = -unscaledCenter.z * scaleFactor;
-                    vehicleMesh.position.y = -unscaledBox.min.y * scaleFactor;
+                    vehicleMesh.position.x = -unscaledCenter.x * vehicleScaleFactor;
+                    vehicleMesh.position.z = -unscaledCenter.z * vehicleScaleFactor;
+                    vehicleMesh.position.y = -unscaledBox.min.y * vehicleScaleFactor;
 
                     // Enable shadows
                     vehicleMesh.traverse((child) => {
@@ -303,14 +310,14 @@
 
                     // --- ADD CANNON TO TOP OF VEHICLE ---
                     // World target dimensions:
-                    // Diameter = 0.33m -> World Radius = 0.165m
+                    // Radius = 0.33 / 8 = 0.04125m (Diameter = 0.0825m)
                     const worldCannonRadius = 0.33 / 8;
-                    // Length from top-center to front edge = half vehicle length
+                    // Length = 1/3 of scaled vehicle length
                     const worldCannonLength = scaledLength / 3;
 
                     // Convert world dimensions into vehicle's unscaled local space
-                    const localCannonRadius = worldCannonRadius / scaleFactor;
-                    const localCannonLength = worldCannonLength / scaleFactor;
+                    const localCannonRadius = worldCannonRadius / vehicleScaleFactor;
+                    const localCannonLength = worldCannonLength / vehicleScaleFactor;
 
                     // Pivot placed at top-center of vehicle in local space
                     cannonPivot = new THREE.Group();
@@ -337,7 +344,7 @@
                         shininess: 60
                     });
 
-                    const cannonMesh = new THREE.Mesh(cannonGeo, cannonMat);
+                    cannonMesh = new THREE.Mesh(cannonGeo, cannonMat);
                     cannonMesh.castShadow = true;
                     cannonMesh.receiveShadow = true;
 
@@ -353,6 +360,53 @@
             );
         }
 
+        // --- FIRE CANNON PROJECTILE ---
+        function fireCannon() {
+            // Can only fire if cannon exists and no projectile is currently in flight
+            if (activeProjectile || !cannonMesh || !cannonPivot || !cannonMesh.visible) return;
+
+            // Hide mounted vehicle cannon
+            cannonMesh.visible = false;
+
+            // Get muzzle world position and quaternion
+            const worldPos = new THREE.Vector3();
+            cannonPivot.getWorldPosition(worldPos);
+
+            const worldQuaternion = new THREE.Quaternion();
+            cannonPivot.getWorldQuaternion(worldQuaternion);
+
+            // Compute firing direction vector in world space
+            const launchDir = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuaternion).normalize();
+
+            // World dimensions for the launched cylinder projectile
+            const worldRadius = 0.33 / 8;
+            const worldLength = (vehicleRadius * 2) / 3;
+
+            const projGeo = new THREE.CylinderGeometry(worldRadius, worldRadius, worldLength, 32);
+            projGeo.rotateX(Math.PI / 2);
+            projGeo.translate(0, 0, worldLength / 2);
+
+            const projMat = new THREE.MeshPhongMaterial({
+                color: 0xffff00,
+                shininess: 60
+            });
+
+            const projMesh = new THREE.Mesh(projGeo, projMat);
+            projMesh.position.copy(worldPos);
+            projMesh.quaternion.copy(worldQuaternion);
+            projMesh.castShadow = true;
+            projMesh.receiveShadow = true;
+
+            scene.add(projMesh);
+
+            activeProjectile = {
+                mesh: projMesh,
+                velocity: launchDir.multiplyScalar(LAUNCH_SPEED),
+                radius: worldRadius,
+                length: worldLength
+            };
+        }
+
         // --- CANNON ELEVATION CONTROL ---
         function updateCannon(delta) {
             if (!cannonPivot) return;
@@ -366,6 +420,71 @@
 
             cannonAngle = Math.min(MAX_CANNON_ANGLE, Math.max(MIN_CANNON_ANGLE, cannonAngle));
             cannonPivot.rotation.x = -cannonAngle; // Elevate tip upward
+        }
+
+        // --- UPDATE BALLISTIC PROJECTILE PHYSICS ---
+        function updateProjectile(delta) {
+            if (!activeProjectile) return;
+
+            // Apply Earth gravitational acceleration (-9.81 m/s²)
+            activeProjectile.velocity.y -= GRAVITY * delta;
+
+            // Update position
+            activeProjectile.mesh.position.addScaledVector(activeProjectile.velocity, delta);
+
+            // Orient projectile matching velocity vector
+            if (activeProjectile.velocity.lengthSq() > 0.001) {
+                const lookDir = activeProjectile.velocity.clone().normalize();
+                activeProjectile.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), lookDir);
+            }
+
+            const pos = activeProjectile.mesh.position;
+            let hit = false;
+
+            // 1. Ground collision check (Floor plane at Y = 0)
+            if (pos.y <= activeProjectile.radius) {
+                hit = true;
+            }
+
+            // 2. Red Object Collision check
+            if (!hit) {
+                for (let i = 0; i < activeObstacles.length; i++) {
+                    const obs = activeObstacles[i];
+                    // Verify object is red (0xEE2222)
+                    if (obs.material && obs.material.color.getHex() === 0xEE2222) {
+                        const obsRadius = obs.userData.radius || 0.5;
+                        const obsHeight = obs.geometry.parameters.height || 1.0;
+
+                        const dx = pos.x - obs.position.x;
+                        const dy = pos.y - (obs.position.y);
+                        const dz = pos.z - obs.position.z;
+                        const distXZ = Math.hypot(dx, dz);
+
+                        // Radial & Vertical bounding box overlap check
+                        if (distXZ < (activeProjectile.radius + obsRadius) && Math.abs(dy) < (obsHeight / 2 + activeProjectile.radius)) {
+                            hit = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 3. Out-of-bounds wall cleanup
+            if (Math.abs(pos.x) > WIDTH / 2 + 1.0 || Math.abs(pos.z) > LENGTH / 2 + 1.0) {
+                hit = true;
+            }
+
+            // On impact: dispose projectile mesh and replace mounted vehicle cannon
+            if (hit) {
+                scene.remove(activeProjectile.mesh);
+                if (activeProjectile.mesh.geometry) activeProjectile.mesh.geometry.dispose();
+                if (activeProjectile.mesh.material) activeProjectile.mesh.material.dispose();
+                activeProjectile = null;
+
+                if (cannonMesh) {
+                    cannonMesh.visible = true;
+                }
+            }
         }
 
         // --- VEHICLE MOVEMENT & COLLISION ENGINE ---
@@ -572,6 +691,12 @@
                 return;
             }
 
+            if (event.code === 'Space' || event.key === ' ') {
+                event.preventDefault();
+                fireCannon();
+                return;
+            }
+
             const k = event.key.toLowerCase();
             if (k in keys) {
                 keys[k] = true;
@@ -610,6 +735,7 @@
 
             updateTimer(delta);
             updateVehicle(delta);
+            updateProjectile(delta);
 
             renderer.render(scene, camera);
         }
