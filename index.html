@@ -92,6 +92,7 @@
         <p><strong>POV Controls:</strong> <kbd>CTRL</kbd> + <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></p>
         <p><strong>Drive Vehicle:</strong> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></p>
         <p><strong>Rotate Vehicle:</strong> <kbd>J</kbd> (Left) | <kbd>L</kbd> (Right)</p>
+        <p><strong>Cannon Control:</strong> <kbd>I</kbd> (Elevate) | <kbd>K</kbd> (Depress)</p>
         <p><strong>Active View:</strong> <span id="current-view" style="color:#2196F3;">1/2 (Center)</span></p>
     </div>
 
@@ -122,10 +123,18 @@
         let vx = 0.0;                 // Velocity X
         let vz = 0.0;                 // Velocity Z
 
+        // --- CANNON VARIABLES ---
+        const CANNON_SPEED = 2.5;                // Angular speed (2.5 rad/s)
+        const MIN_CANNON_ANGLE = 0.0;            // 0 degrees
+        const MAX_CANNON_ANGLE = Math.PI / 3;    // 60 degrees (in radians)
+        let cannonPivot = null;
+        let cannonAngle = 0.0;
+
         // Key states
         const keys = {
             w: false, s: false, a: false, d: false,
-            j: false, l: false
+            j: false, l: false,
+            i: false, k: false
         };
 
         // Timer Variables
@@ -259,30 +268,30 @@
                 function (gltf) {
                     vehicleMesh = gltf.scene;
 
-                    // Measure dimensions
-                    const box = new THREE.Box3().setFromObject(vehicleMesh);
-                    const size = new THREE.Vector3();
-                    box.getSize(size);
+                    // Unscaled bounding box & center in GLTF local space
+                    const unscaledBox = new THREE.Box3().setFromObject(vehicleMesh);
+                    const unscaledSize = new THREE.Vector3();
+                    unscaledBox.getSize(unscaledSize);
+
+                    const unscaledCenter = new THREE.Vector3();
+                    unscaledBox.getCenter(unscaledCenter);
 
                     // Scale to 0.69m width proportionally
                     const targetWidth = 0.69;
-                    const scaleFactor = targetWidth / (size.x > 0 ? size.x : 1);
+                    const scaleFactor = targetWidth / (unscaledSize.x > 0 ? unscaledSize.x : 1);
                     vehicleMesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-                    // Recalculate scaled bounds & footprint radius
-                    const scaledBox = new THREE.Box3().setFromObject(vehicleMesh);
-                    const scaledSize = new THREE.Vector3();
-                    scaledBox.getSize(scaledSize);
-                    
-                    // Vehicle bounding radius on the XZ floor plane
-                    vehicleRadius = Math.hypot(scaledSize.x, scaledSize.z) / 2;
+                    // World bounding dimensions
+                    const scaledWidth = unscaledSize.x * scaleFactor;
+                    const scaledLength = unscaledSize.z * scaleFactor;
 
-                    // Center on floor
-                    const center = new THREE.Vector3();
-                    scaledBox.getCenter(center);
-                    vehicleMesh.position.x = -center.x;
-                    vehicleMesh.position.z = -center.z;
-                    vehicleMesh.position.y = -scaledBox.min.y;
+                    // Vehicle bounding radius on the XZ floor plane
+                    vehicleRadius = Math.hypot(scaledWidth, scaledLength) / 2;
+
+                    // Center vehicle mesh on floor
+                    vehicleMesh.position.x = -unscaledCenter.x * scaleFactor;
+                    vehicleMesh.position.z = -unscaledCenter.z * scaleFactor;
+                    vehicleMesh.position.y = -unscaledBox.min.y * scaleFactor;
 
                     // Enable shadows
                     vehicleMesh.traverse((child) => {
@@ -292,6 +301,49 @@
                         }
                     });
 
+                    // --- ADD CANNON TO TOP OF VEHICLE ---
+                    // World target dimensions:
+                    // Diameter = 0.33m -> World Radius = 0.165m
+                    const worldCannonRadius = 0.33 / 8;
+                    // Length from top-center to front edge = half vehicle length
+                    const worldCannonLength = scaledLength / 3;
+
+                    // Convert world dimensions into vehicle's unscaled local space
+                    const localCannonRadius = worldCannonRadius / scaleFactor;
+                    const localCannonLength = worldCannonLength / scaleFactor;
+
+                    // Pivot placed at top-center of vehicle in local space
+                    cannonPivot = new THREE.Group();
+                    cannonPivot.position.set(
+                        unscaledCenter.x,
+                        unscaledBox.max.y,
+                        unscaledCenter.z
+                    );
+
+                    // Create cylinder geometry in local space
+                    const cannonGeo = new THREE.CylinderGeometry(
+                        localCannonRadius,
+                        localCannonRadius,
+                        localCannonLength,
+                        32
+                    );
+
+                    // Orient along +Z axis with rear base at pivot origin (Z = 0)
+                    cannonGeo.rotateX(Math.PI / 2);
+                    cannonGeo.translate(0, 0, localCannonLength / 2);
+
+                    const cannonMat = new THREE.MeshPhongMaterial({
+                        color: 0xffff00,
+                        shininess: 60
+                    });
+
+                    const cannonMesh = new THREE.Mesh(cannonGeo, cannonMat);
+                    cannonMesh.castShadow = true;
+                    cannonMesh.receiveShadow = true;
+
+                    cannonPivot.add(cannonMesh);
+                    vehicleMesh.add(cannonPivot);
+
                     scene.add(vehicleMesh);
                 },
                 undefined,
@@ -299,6 +351,21 @@
                     console.warn("Could not load 'vehicle.glb'. Ensure file is served via local web server (e.g. python -m http.server).", error);
                 }
             );
+        }
+
+        // --- CANNON ELEVATION CONTROL ---
+        function updateCannon(delta) {
+            if (!cannonPivot) return;
+
+            if (keys.i) {
+                cannonAngle += CANNON_SPEED * delta;
+            }
+            if (keys.k) {
+                cannonAngle -= CANNON_SPEED * delta;
+            }
+
+            cannonAngle = Math.min(MAX_CANNON_ANGLE, Math.max(MIN_CANNON_ANGLE, cannonAngle));
+            cannonPivot.rotation.x = -cannonAngle; // Elevate tip upward
         }
 
         // --- VEHICLE MOVEMENT & COLLISION ENGINE ---
@@ -387,6 +454,9 @@
                 vehicleMesh.position.z = -maxZ;
                 vz = 0;
             }
+
+            // 5. Cannon movement update
+            updateCannon(delta);
         }
 
         // --- OBSTACLE GENERATION & BOUNDS CHECK ---
