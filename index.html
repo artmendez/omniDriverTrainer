@@ -52,6 +52,30 @@
             border-color: #4CAF50;
             min-width: 120px;
         }
+
+        /* Six Bar Indicator (Left of Timer) */
+        #bars-box {
+            display: flex;
+            gap: 5px;
+            padding: 6px 12px;
+            align-items: center;
+            justify-content: center;
+            border-color: #00E5FF;
+        }
+        .bar {
+            width: 8px;
+            height: 26px;
+            background-color: #00E5FF;
+            border-radius: 2px;
+            box-shadow: 0 0 8px #00E5FF;
+            transition: background-color 0.25s, box-shadow 0.25s, opacity 0.25s;
+        }
+        .bar.lost {
+            background-color: #333344;
+            box-shadow: none;
+            opacity: 0.3;
+        }
+
         #timer-box {
             font-size: 26px;
             letter-spacing: 1px;
@@ -145,6 +169,51 @@
             font-family: 'Courier New', Courier, monospace;
             user-select: none;
         }
+
+        /* Game Over Overlay */
+        #gameover-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(15, 0, 0, 0.92);
+            color: #ffffff;
+            border: 3px solid #FF2A2A;
+            padding: 32px 54px;
+            border-radius: 14px;
+            font-family: 'Courier New', Courier, monospace;
+            text-align: center;
+            z-index: 110;
+            display: none;
+            box-shadow: 0 0 35px rgba(255, 42, 42, 0.7);
+            user-select: none;
+        }
+        #gameover-overlay h1 {
+            font-size: 42px;
+            color: #FF2A2A;
+            margin: 0 0 10px 0;
+            text-shadow: 0 0 12px #FF2A2A;
+        }
+        #gameover-overlay p {
+            font-size: 22px;
+            margin: 10px 0 24px 0;
+            color: #dddddd;
+        }
+        #restart-btn {
+            padding: 12px 28px;
+            background-color: #FF2A2A;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 0 12px rgba(255, 42, 42, 0.5);
+            font-family: inherit;
+        }
+        #restart-btn:hover {
+            background-color: #d60000;
+        }
     </style>
 
     <!-- Three.js Engine & GLTF Loader -->
@@ -153,13 +222,27 @@
 </head>
 <body>
 
-    <!-- Start Prompt & Big Countdown Displays -->
+    <!-- Start Prompt, Countdown & Game Over Overlays -->
     <div id="start-prompt" onclick="startSequence()">CLICK TO START</div>
     <div id="countdown-overlay">3</div>
 
-    <!-- Top HUD: Score, Timer, Vehicle Orientation Dial & Cannon Angle -->
+    <div id="gameover-overlay">
+        <h1>GAME OVER</h1>
+        <p>FINAL SCORE: <span id="final-score">0</span></p>
+        <button id="restart-btn" onclick="restartGame()">PLAY AGAIN</button>
+    </div>
+
+    <!-- Top HUD: Score, 6-Bar Indicator, Timer, Vehicle Orientation Dial & Cannon Angle -->
     <div id="hud-top">
         <div id="score-box" class="hud-card">PTS: <span id="score-text">0</span></div>
+        <div id="bars-box" class="hud-card">
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+        </div>
         <div id="timer-box" class="hud-card"><span id="timer-text">10.0</span>s</div>
         <div id="dial-container" class="hud-card">
             <canvas id="dial-canvas" width="52" height="52"></canvas>
@@ -202,7 +285,9 @@
         
         // --- GAME STATE VARIABLES ---
         let score = 0;
+        let remainingBars = 6;
         let gameActive = false;        // Driving & timer paused during countdown
+        let isGameOver = false;
         let sequenceStarted = false;
 
         // --- AUDIO SYSTEM (Procedural Web Audio API) ---
@@ -225,11 +310,10 @@
             const gain = audioCtx.createGain();
 
             osc.type = isGo ? 'triangle' : 'sine';
-            const freq = isGo ? 880 : 440; // High pitch for GO, lower for 3, 2, 1
+            const freq = isGo ? 880 : 440;
             osc.frequency.setValueAtTime(freq, now);
 
             if (isGo) {
-                // Energetic double-tone pitch sweep for GO!
                 osc.frequency.exponentialRampToValueAtTime(1320, now + 0.25);
                 gain.gain.setValueAtTime(0.6, now);
                 gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
@@ -245,6 +329,25 @@
                 osc.start(now);
                 osc.stop(now + 0.2);
             }
+        }
+
+        function playBarLostSound() {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(320, now);
+            osc.frequency.exponentialRampToValueAtTime(70, now + 0.35);
+
+            gain.gain.setValueAtTime(0.5, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 0.35);
         }
 
         function playCannonSound() {
@@ -430,16 +533,29 @@
             fillLight.position.set(-5, 10, 10);
             scene.add(fillLight);
 
-            // 5. Build Environment & Load Vehicle FIRST (Obstacles spawn after vehicle)
+            // 5. Build Environment & Load Vehicle FIRST
             createFloor();
             createPerimeterWalls();
             loadVehicleModel();
+            updateBarsHUD();
 
             // 6. Event Listeners
             window.addEventListener('resize', onWindowResize);
             window.addEventListener('keydown', onKeyDown);
             window.addEventListener('keyup', onKeyUp);
             window.addEventListener('pointerdown', initAudio);
+        }
+
+        // --- BARS HUD UPDATE ---
+        function updateBarsHUD() {
+            const barElems = document.querySelectorAll('#bars-box .bar');
+            barElems.forEach((bar, index) => {
+                if (index < remainingBars) {
+                    bar.classList.remove('lost');
+                } else {
+                    bar.classList.add('lost');
+                }
+            });
         }
 
         // --- START COUNTDOWN SEQUENCE ---
@@ -469,7 +585,6 @@
                     countOverlay.style.color = '#4CAF50';
                     playCountdownSound(true);
 
-                    // Spawn obstacles AFTER vehicle is positioned & start game action
                     spawnObstacles();
                     gameActive = true;
                 } else {
@@ -477,6 +592,51 @@
                     countOverlay.style.display = 'none';
                 }
             }, 1000);
+        }
+
+        // --- RESTART GAME ---
+        function restartGame() {
+            const goElem = document.getElementById('gameover-overlay');
+            if (goElem) goElem.style.display = 'none';
+
+            score = 0;
+            addScore(0);
+            remainingBars = 6;
+            updateBarsHUD();
+            timerSeconds = 10.0;
+            isGameOver = false;
+            sequenceStarted = false;
+            vx = 0;
+            vz = 0;
+
+            // Reset Vehicle Position to South Wall Center
+            if (vehicleMesh) {
+                const initialZ = -(LENGTH / 2) + vehicleRadius + 0.3;
+                vehicleMesh.position.set(0, vehicleMesh.position.y, initialZ);
+                vehicleMesh.rotation.y = 0;
+            }
+
+            // Remove Active Projectile if any
+            if (activeProjectile) {
+                scene.remove(activeProjectile.mesh);
+                if (activeProjectile.mesh.geometry) activeProjectile.mesh.geometry.dispose();
+                if (activeProjectile.mesh.material) activeProjectile.mesh.material.dispose();
+                activeProjectile = null;
+                if (cannonMesh) cannonMesh.visible = true;
+            }
+
+            startSequence();
+        }
+
+        function triggerGameOver() {
+            gameActive = false;
+            isGameOver = true;
+
+            const finalScoreElem = document.getElementById('final-score');
+            if (finalScoreElem) finalScoreElem.innerText = score;
+
+            const goElem = document.getElementById('gameover-overlay');
+            if (goElem) goElem.style.display = 'block';
         }
 
         // --- SCORE ENGINE ---
@@ -529,7 +689,6 @@
 
             const wallGroup = new THREE.Group();
 
-            // North & South
             const nsGeo = new THREE.BoxGeometry(WIDTH + (WALL_THICKNESS * 2), WALL_HEIGHT, WALL_THICKNESS);
             const northWall = new THREE.Mesh(nsGeo, wallMaterial);
             northWall.position.set(0, WALL_HEIGHT / 2, (LENGTH / 2) + (WALL_THICKNESS / 2));
@@ -537,7 +696,6 @@
             const southWall = new THREE.Mesh(nsGeo, wallMaterial);
             southWall.position.set(0, WALL_HEIGHT / 2, -(LENGTH / 2) - (WALL_THICKNESS / 2));
 
-            // East & West
             const ewGeo = new THREE.BoxGeometry(WALL_THICKNESS, WALL_HEIGHT, LENGTH);
             const eastWall = new THREE.Mesh(ewGeo, wallMaterial);
             eastWall.position.set((WIDTH / 2) + (WALL_THICKNESS / 2), WALL_HEIGHT / 2, 0);
@@ -559,7 +717,6 @@
                 function (gltf) {
                     vehicleMesh = gltf.scene;
 
-                    // Unscaled bounding box & center in GLTF local space
                     const unscaledBox = new THREE.Box3().setFromObject(vehicleMesh);
                     const unscaledSize = new THREE.Vector3();
                     unscaledBox.getSize(unscaledSize);
@@ -567,26 +724,21 @@
                     const unscaledCenter = new THREE.Vector3();
                     unscaledBox.getCenter(unscaledCenter);
 
-                    // Scale to 0.69m width proportionally
                     const targetWidth = 0.69;
                     vehicleScaleFactor = targetWidth / (unscaledSize.x > 0 ? unscaledSize.x : 1);
                     vehicleMesh.scale.set(vehicleScaleFactor, vehicleScaleFactor, vehicleScaleFactor);
 
-                    // World bounding dimensions
                     const scaledWidth = unscaledSize.x * vehicleScaleFactor;
                     const scaledLength = unscaledSize.z * vehicleScaleFactor;
 
-                    // Vehicle bounding radius on the XZ floor plane
                     vehicleRadius = Math.hypot(scaledWidth, scaledLength) / 2;
 
-                    // POSITION VEHICLE AT WALL CLOSEST TO POV (SOUTH WALL), CENTERED
-                    const initialZ = -(LENGTH / 2) + vehicleRadius + 0.3; // Placed near south wall
+                    const initialZ = -(LENGTH / 2) + vehicleRadius + 0.3;
                     vehicleMesh.position.x = 0;
                     vehicleMesh.position.z = initialZ;
                     vehicleMesh.position.y = -unscaledBox.min.y * vehicleScaleFactor;
-                    vehicleMesh.rotation.y = 0; // Facing North into arena
+                    vehicleMesh.rotation.y = 0;
 
-                    // Enable shadows
                     vehicleMesh.traverse((child) => {
                         if (child.isMesh) {
                             child.castShadow = true;
@@ -594,7 +746,6 @@
                         }
                     });
 
-                    // --- ADD CANNON TO TOP OF VEHICLE ---
                     const worldCannonRadius = 0.33 / 8;
                     const worldCannonLength = scaledLength / 3;
 
@@ -641,9 +792,8 @@
 
         // --- FIRE CANNON PROJECTILE ---
         function fireCannon() {
-            if (!gameActive || activeProjectile || !cannonMesh || !cannonPivot || !cannonMesh.visible) return;
+            if (!gameActive || isGameOver || activeProjectile || !cannonMesh || !cannonPivot || !cannonMesh.visible) return;
 
-            // Play firing sound effect
             playCannonSound();
 
             cannonMesh.visible = false;
@@ -811,6 +961,15 @@
             }
         }
 
+        // --- CHECK CLEAR FIELD & RESPAWN IMMEDIATELY ---
+        function checkFieldCleared() {
+            if (activeObstacles.length === 0 && gameActive) {
+                // Reset timer immediately on clearing both objects, NO bar removed
+                timerSeconds = 10.0;
+                spawnObstacles();
+            }
+        }
+
         // --- UPDATE BALLISTIC PROJECTILE PHYSICS ---
         function updateProjectile(delta) {
             if (!activeProjectile) return;
@@ -851,6 +1010,8 @@
                             if (obs.geometry) obs.geometry.dispose();
                             if (obs.material) obs.material.dispose();
                             activeObstacles.splice(i, 1);
+
+                            checkFieldCleared();
                             break;
                         }
                     }
@@ -875,13 +1036,11 @@
 
         // --- VEHICLE MOVEMENT & COLLISION ENGINE ---
         function updateVehicle(delta) {
-            if (!vehicleMesh || !gameActive) return;
+            if (!vehicleMesh || !gameActive || isGameOver) return;
 
-            // Rotation (J = Left, L = Right)
             if (keys.j) vehicleMesh.rotation.y += ROTATION_SPEED * delta;
             if (keys.l) vehicleMesh.rotation.y -= ROTATION_SPEED * delta;
 
-            // Velocity Intent (W/A/S/D)
             let dirX = 0, dirZ = 0;
             if (keys.w) dirZ += 1;
             if (keys.s) dirZ -= 1;
@@ -912,7 +1071,6 @@
             vehicleMesh.position.x += vx * delta;
             vehicleMesh.position.z += vz * delta;
 
-            // Obstacle Collisions
             activeObstacles.slice().forEach(obs => {
                 const obsRadius = obs.userData.radius || 0.5;
                 const dx = vehicleMesh.position.x - obs.position.x;
@@ -931,6 +1089,8 @@
                         if (obs.material) obs.material.dispose();
                         const idx = activeObstacles.indexOf(obs);
                         if (idx !== -1) activeObstacles.splice(idx, 1);
+
+                        checkFieldCleared();
                         return;
                     }
 
@@ -949,7 +1109,6 @@
                 }
             });
 
-            // Wall Collisions
             const maxX = (WIDTH / 2) - vehicleRadius;
             const maxZ = (LENGTH / 2) - vehicleRadius;
 
@@ -1112,7 +1271,6 @@
                         distToOtherObs = Math.min(distToOtherObs, d);
                     });
 
-                    // Ensure objects do NOT spawn on top of vehicle or each other
                     if (distToVehicle > (boundingRadius + vehicleRadius + 1.2) && distToOtherObs > (boundingRadius + 0.8)) {
                         validPos = true;
                     }
@@ -1131,18 +1289,29 @@
             });
         }
 
-        // --- TIMER UPDATE LOOP ---
+        // --- TIMER UPDATE LOOP & BAR DECAY ---
         function updateTimer(delta) {
-            if (!gameActive) return;
+            if (!gameActive || isGameOver) return;
 
             timerSeconds -= delta;
 
             if (timerSeconds <= 0) {
-                timerSeconds = 10.0;
-                spawnObstacles();
+                remainingBars--;
+                updateBarsHUD();
+                playBarLostSound();
+
+                if (remainingBars <= 0) {
+                    triggerGameOver();
+                } else {
+                    timerSeconds = 10.0;
+                    spawnObstacles();
+                }
             }
 
-            document.getElementById('timer-text').innerText = timerSeconds.toFixed(1);
+            const timerText = document.getElementById('timer-text');
+            if (timerText) {
+                timerText.innerText = Math.max(0, timerSeconds).toFixed(1);
+            }
         }
 
         // --- CAMERA POV SWITCHING ---
@@ -1158,7 +1327,7 @@
 
         // --- KEYBOARD EVENT HANDLERS ---
         function onKeyDown(event) {
-            if (!sequenceStarted) {
+            if (!sequenceStarted && !isGameOver) {
                 startSequence();
             }
 
