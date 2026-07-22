@@ -152,6 +152,7 @@
 
         let scene, camera, renderer;
         let activeObstacles = [];
+        let activeExplosions = [];     // Particle explosion instances
         let vehicleMesh = null;
         let vehicleRadius = 0.45;     // Dynamic bounding radius (updated on GLTF load)
         let vehicleScaleFactor = 1.0;
@@ -461,6 +462,126 @@
             cannonPivot.rotation.x = -cannonAngle;
         }
 
+        // --- EXCITING PARTICLE EXPLOSION EFFECT ---
+        function createExplosion(pos) {
+            const particleCount = 90;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            const velocities = [];
+
+            // Palette: Fiery Core -> Bright Orange/Yellow -> Crimson Red
+            const colorPalette = [
+                new THREE.Color(0xffffff), // Core Flash White
+                new THREE.Color(0xffea00), // Bright Yellow
+                new THREE.Color(0xff6600), // Fire Orange
+                new THREE.Color(0xee2200)  // Deep Crimson
+            ];
+
+            for (let i = 0; i < particleCount; i++) {
+                // Initial origin centered at impact
+                positions[i * 3] = pos.x;
+                positions[i * 3 + 1] = pos.y;
+                positions[i * 3 + 2] = pos.z;
+
+                // Spherical explosion direction vector
+                const u = Math.random();
+                const v = Math.random();
+                const theta = u * 2.0 * Math.PI;
+                const phi = Math.acos(2.0 * v - 1.0);
+                const speed = THREE.MathUtils.randFloat(3.5, 9.0);
+
+                velocities.push(new THREE.Vector3(
+                    speed * Math.sin(phi) * Math.cos(theta),
+                    speed * Math.sin(phi) * Math.sin(theta) + THREE.MathUtils.randFloat(1.5, 4.0), // Upward burst bias
+                    speed * Math.cos(phi)
+                ));
+
+                const col = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+                colors[i * 3] = col.r;
+                colors[i * 3 + 1] = col.g;
+                colors[i * 3 + 2] = col.b;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 0.18,
+                vertexColors: true,
+                transparent: true,
+                opacity: 1.0,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            const pSystem = new THREE.Points(geometry, material);
+            scene.add(pSystem);
+
+            // Dynamic Point Light Flash
+            const flashLight = new THREE.PointLight(0xff7700, 6.0, 8.0);
+            flashLight.position.copy(pos);
+            scene.add(flashLight);
+
+            activeExplosions.push({
+                mesh: pSystem,
+                light: flashLight,
+                velocities: velocities,
+                life: 0.8,      // Lifetime in seconds
+                maxLife: 0.8
+            });
+        }
+
+        // --- UPDATE EXPLOSION PARTICLES & LIGHTS ---
+        function updateExplosions(delta) {
+            for (let e = activeExplosions.length - 1; e >= 0; e--) {
+                const exp = activeExplosions[e];
+                exp.life -= delta;
+
+                if (exp.life <= 0) {
+                    // Remove particle mesh & light
+                    scene.remove(exp.mesh);
+                    if (exp.mesh.geometry) exp.mesh.geometry.dispose();
+                    if (exp.mesh.material) exp.mesh.material.dispose();
+
+                    if (exp.light) scene.remove(exp.light);
+                    activeExplosions.splice(e, 1);
+                    continue;
+                }
+
+                const lifeFactor = exp.life / exp.maxLife;
+
+                // Fade Point Light Flash
+                if (exp.light) {
+                    exp.light.intensity = lifeFactor * 6.0;
+                }
+
+                // Fade Particle Material Opacity
+                exp.mesh.material.opacity = lifeFactor;
+
+                // Advance Particle Positions & Apply Gravity/Drag
+                const posArr = exp.mesh.geometry.attributes.position.array;
+                for (let i = 0; i < exp.velocities.length; i++) {
+                    const vel = exp.velocities[i];
+
+                    // Gravity & Drag
+                    vel.y -= GRAVITY * 1.2 * delta;
+                    vel.multiplyScalar(0.96); // Drag factor
+
+                    posArr[i * 3]     += vel.x * delta;
+                    posArr[i * 3 + 1] += vel.y * delta;
+                    posArr[i * 3 + 2] += vel.z * delta;
+
+                    // Ground bounce plane
+                    if (posArr[i * 3 + 1] < 0.02) {
+                        posArr[i * 3 + 1] = 0.02;
+                        vel.y = -vel.y * 0.3;
+                    }
+                }
+                exp.mesh.geometry.attributes.position.needsUpdate = true;
+            }
+        }
+
         // --- UPDATE BALLISTIC PROJECTILE PHYSICS ---
         function updateProjectile(delta) {
             if (!activeProjectile) return;
@@ -481,7 +602,7 @@
                 hit = true;
             }
 
-            // Red Object Collision (+10 Points)
+            // Red Object Collision (+10 Points & Particle Explosion)
             if (!hit) {
                 for (let i = activeObstacles.length - 1; i >= 0; i--) {
                     const obs = activeObstacles[i];
@@ -499,6 +620,9 @@
                             
                             // Award 10 Points for Cannon Hit on Red Object
                             addScore(10);
+
+                            // Trigger Particle Explosion at Target Center
+                            createExplosion(obs.position.clone());
 
                             // Remove Red Target from Scene
                             scene.remove(obs);
@@ -875,6 +999,7 @@
             updateTimer(delta);
             updateVehicle(delta);
             updateProjectile(delta);
+            updateExplosions(delta);
             updateHUD();
 
             renderer.render(scene, camera);
