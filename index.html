@@ -341,17 +341,12 @@
                     });
 
                     // --- ADD CANNON TO TOP OF VEHICLE ---
-                    // World target dimensions:
-                    // Radius = 0.33 / 8 = 0.04125m (Diameter = 0.0825m)
                     const worldCannonRadius = 0.33 / 8;
-                    // Length = 1/3 of scaled vehicle length
                     const worldCannonLength = scaledLength / 3;
 
-                    // Convert world dimensions into vehicle's unscaled local space
                     const localCannonRadius = worldCannonRadius / vehicleScaleFactor;
                     const localCannonLength = worldCannonLength / vehicleScaleFactor;
 
-                    // Pivot placed at top-center of vehicle in local space
                     cannonPivot = new THREE.Group();
                     cannonPivot.position.set(
                         unscaledCenter.x,
@@ -359,7 +354,6 @@
                         unscaledCenter.z
                     );
 
-                    // Create cylinder geometry in local space
                     const cannonGeo = new THREE.CylinderGeometry(
                         localCannonRadius,
                         localCannonRadius,
@@ -367,7 +361,6 @@
                         32
                     );
 
-                    // Orient along +Z axis with rear base at pivot origin (Z = 0)
                     cannonGeo.rotateX(Math.PI / 2);
                     cannonGeo.translate(0, 0, localCannonLength / 2);
 
@@ -387,30 +380,25 @@
                 },
                 undefined,
                 function (error) {
-                    console.warn("Could not load 'vehicle.glb'. Ensure file is served via local web server (e.g. python -m http.server).", error);
+                    console.warn("Could not load 'vehicle.glb'. Ensure file is served via local web server.", error);
                 }
             );
         }
 
         // --- FIRE CANNON PROJECTILE ---
         function fireCannon() {
-            // Can only fire if cannon exists and no projectile is currently in flight
             if (activeProjectile || !cannonMesh || !cannonPivot || !cannonMesh.visible) return;
 
-            // Hide mounted vehicle cannon
             cannonMesh.visible = false;
 
-            // Get muzzle world position and quaternion
             const worldPos = new THREE.Vector3();
             cannonPivot.getWorldPosition(worldPos);
 
             const worldQuaternion = new THREE.Quaternion();
             cannonPivot.getWorldQuaternion(worldQuaternion);
 
-            // Compute firing direction vector in world space
             const launchDir = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuaternion).normalize();
 
-            // World dimensions for the launched cylinder projectile
             const worldRadius = 0.33 / 8;
             const worldLength = (vehicleRadius * 2) / 3;
 
@@ -451,20 +439,16 @@
             }
 
             cannonAngle = Math.min(MAX_CANNON_ANGLE, Math.max(MIN_CANNON_ANGLE, cannonAngle));
-            cannonPivot.rotation.x = -cannonAngle; // Elevate tip upward
+            cannonPivot.rotation.x = -cannonAngle;
         }
 
         // --- UPDATE BALLISTIC PROJECTILE PHYSICS ---
         function updateProjectile(delta) {
             if (!activeProjectile) return;
 
-            // Apply Earth gravitational acceleration (-9.81 m/s²)
             activeProjectile.velocity.y -= GRAVITY * delta;
-
-            // Update position
             activeProjectile.mesh.position.addScaledVector(activeProjectile.velocity, delta);
 
-            // Orient projectile matching velocity vector
             if (activeProjectile.velocity.lengthSq() > 0.001) {
                 const lookDir = activeProjectile.velocity.clone().normalize();
                 activeProjectile.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), lookDir);
@@ -473,16 +457,15 @@
             const pos = activeProjectile.mesh.position;
             let hit = false;
 
-            // 1. Ground collision check (Floor plane at Y = 0)
+            // Ground collision
             if (pos.y <= activeProjectile.radius) {
                 hit = true;
             }
 
-            // 2. Red Object Collision check
+            // Red Object Collision
             if (!hit) {
                 for (let i = 0; i < activeObstacles.length; i++) {
                     const obs = activeObstacles[i];
-                    // Verify object is red (0xEE2222)
                     if (obs.material && obs.material.color.getHex() === 0xEE2222) {
                         const obsRadius = obs.userData.radius || 0.5;
                         const obsHeight = obs.geometry.parameters.height || 1.0;
@@ -492,7 +475,6 @@
                         const dz = pos.z - obs.position.z;
                         const distXZ = Math.hypot(dx, dz);
 
-                        // Radial & Vertical bounding box overlap check
                         if (distXZ < (activeProjectile.radius + obsRadius) && Math.abs(dy) < (obsHeight / 2 + activeProjectile.radius)) {
                             hit = true;
                             break;
@@ -501,12 +483,11 @@
                 }
             }
 
-            // 3. Out-of-bounds wall cleanup
+            // Out of bounds
             if (Math.abs(pos.x) > WIDTH / 2 + 1.0 || Math.abs(pos.z) > LENGTH / 2 + 1.0) {
                 hit = true;
             }
 
-            // On impact: dispose projectile mesh and replace mounted vehicle cannon
             if (hit) {
                 scene.remove(activeProjectile.mesh);
                 if (activeProjectile.mesh.geometry) activeProjectile.mesh.geometry.dispose();
@@ -523,16 +504,16 @@
         function updateVehicle(delta) {
             if (!vehicleMesh) return;
 
-            // 1. Rotation (J = Left, L = Right)
+            // Rotation (J = Left, L = Right)
             if (keys.j) vehicleMesh.rotation.y += ROTATION_SPEED * delta;
             if (keys.l) vehicleMesh.rotation.y -= ROTATION_SPEED * delta;
 
-            // 2. Velocity Intent (W/A/S/D)
+            // Velocity Intent (W/A/S/D) - Corrected A (Left = -X) and D (Right = +X)
             let dirX = 0, dirZ = 0;
             if (keys.w) dirZ += 1;
             if (keys.s) dirZ -= 1;
-            if (keys.a) dirX += 1;
-            if (keys.d) dirX -= 1;
+            if (keys.a) dirX -= 1;
+            if (keys.d) dirX += 1;
 
             let targetVx = 0, targetVz = 0;
             const inputLen = Math.hypot(dirX, dirZ);
@@ -542,7 +523,6 @@
                 targetVz = (dirZ / inputLen) * MAX_SPEED;
             }
 
-            // Linear Acceleration / Deceleration
             const diffX = targetVx - vx;
             const diffZ = targetVz - vz;
             const distVel = Math.hypot(diffX, diffZ);
@@ -556,11 +536,10 @@
                 vz += (diffZ / distVel) * step;
             }
 
-            // Apply translation
             vehicleMesh.position.x += vx * delta;
             vehicleMesh.position.z += vz * delta;
 
-            // 3. COLLISION RESPONSE: OBSTACLES
+            // Obstacle Collisions
             activeObstacles.forEach(obs => {
                 const obsRadius = obs.userData.radius || 0.5;
                 const dx = vehicleMesh.position.x - obs.position.x;
@@ -569,7 +548,6 @@
                 const minDist = vehicleRadius + obsRadius;
 
                 if (dist < minDist && dist > 0) {
-                    // Push vehicle outside obstacle boundary
                     const overlap = minDist - dist;
                     const nx = dx / dist;
                     const nz = dz / dist;
@@ -577,7 +555,6 @@
                     vehicleMesh.position.x += nx * overlap;
                     vehicleMesh.position.z += nz * overlap;
 
-                    // Kill velocity along collision normal
                     const dot = vx * nx + vz * nz;
                     if (dot < 0) {
                         vx -= dot * nx;
@@ -586,7 +563,7 @@
                 }
             });
 
-            // 4. COLLISION RESPONSE: PERIMETER WALLS
+            // Wall Collisions
             const maxX = (WIDTH / 2) - vehicleRadius;
             const maxZ = (LENGTH / 2) - vehicleRadius;
 
@@ -606,11 +583,10 @@
                 vz = 0;
             }
 
-            // 5. Cannon movement update
             updateCannon(delta);
         }
 
-        // --- UPDATE TOP HUD (DIAL & CANNON ANGLE) ---
+        // --- UPDATE TOP HUD ---
         function updateHUD() {
             // Update Cannon Pitch Value Display
             const cannonDeg = (cannonAngle * 180 / Math.PI).toFixed(1);
@@ -636,13 +612,17 @@
             ctx.lineWidth = 3;
             ctx.stroke();
 
-            // Highlight Active Rotation on Dial Border (J = Counter-Clockwise, L = Clockwise)
+            // Highlight Active Rotation on Border (J = Left, L = Right)
             if (keys.j || keys.l) {
                 ctx.beginPath();
-                const arcStart = keys.j ? -Math.PI * 0.75 : -Math.PI * 0.25;
-                const arcEnd = keys.j ? -Math.PI * 0.25 : -Math.PI * 0.75;
-                ctx.arc(cx, cy, r, arcStart, arcEnd, keys.j);
-                ctx.strokeStyle = '#00E5FF'; // Bright Cyan rotation arc
+                if (keys.j) {
+                    // Turn Left: Top-Left border quadrant arc
+                    ctx.arc(cx, cy, r, -Math.PI * 0.5, -Math.PI, true);
+                } else {
+                    // Turn Right: Top-Right border quadrant arc
+                    ctx.arc(cx, cy, r, -Math.PI * 0.5, 0, false);
+                }
+                ctx.strokeStyle = '#00E5FF'; // Bright Cyan arc
                 ctx.lineWidth = 5;
                 ctx.stroke();
             }
@@ -650,10 +630,11 @@
             // Highlight Active Direction of Movement on Dial Border
             const speed = Math.hypot(vx, vz);
             if (speed > 0.05) {
-                const moveAngle = Math.atan2(vz, vx); // 2D canvas coordinates
+                // Canvas angle: vx (East/West) & -vz (North/South)
+                const moveAngle = Math.atan2(-vz, vx);
                 ctx.beginPath();
                 ctx.arc(cx, cy, r, moveAngle - 0.35, moveAngle + 0.35);
-                ctx.strokeStyle = '#4CAF50'; // Bright Green movement arc
+                ctx.strokeStyle = '#4CAF50'; // Bright Green arc
                 ctx.lineWidth = 5;
                 ctx.stroke();
             }
@@ -663,8 +644,9 @@
             if (vehicleMesh) {
                 rotY = vehicleMesh.rotation.y;
             }
-            // Canvas orientation angle mapping
-            const headingAngle = Math.atan2(Math.cos(rotY), Math.sin(rotY));
+            // Corrected heading angle mapping:
+            // J (Turn Left) turns needle Left (-X); L (Turn Right) turns needle Right (+X)
+            const headingAngle = Math.atan2(-Math.cos(rotY), -Math.sin(rotY));
 
             ctx.save();
             ctx.translate(cx, cy);
@@ -674,9 +656,9 @@
             const needleBase = 6;
 
             ctx.beginPath();
-            ctx.moveTo(needleLen, 0);                 // Triangular Tip
+            ctx.moveTo(needleLen, 0);                 // Tip
             ctx.lineTo(-needleBase, -needleBase);     // Rear Left
-            ctx.lineTo(-needleBase / 2, 0);           // Inset Rear Center
+            ctx.lineTo(-needleBase / 2, 0);           // Inset Center
             ctx.lineTo(-needleBase, needleBase);      // Rear Right
             ctx.closePath();
 
@@ -705,7 +687,7 @@
             activeObstacles = [];
 
             const shapes = ['prism', 'cylinder', 'wall'];
-            const obstacleColors = [0xEE2222, 0x2266FF]; // 1 Red, 1 Blue
+            const obstacleColors = [0xEE2222, 0x2266FF];
 
             obstacleColors.forEach(color => {
                 const shape = shapes[Math.floor(Math.random() * shapes.length)];
@@ -736,7 +718,6 @@
                 const maxX = (WIDTH / 2) - boundingRadius;
                 const maxZ = (LENGTH / 2) - boundingRadius;
 
-                // Pick valid position that doesn't overlap vehicle or other obstacles
                 let validPos = false;
                 let attempts = 0;
                 let posX = 0, posZ = 0;
@@ -757,7 +738,6 @@
                         distToOtherObs = Math.min(distToOtherObs, d);
                     });
 
-                    // Ensure clear distance from vehicle and other objects
                     if (distToVehicle > (boundingRadius + vehicleRadius + 0.3) && distToOtherObs > (boundingRadius + 0.8)) {
                         validPos = true;
                     }
