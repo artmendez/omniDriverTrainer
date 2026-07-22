@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Perimeter Environment</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #111116;
+            font-family: sans-serif;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+        }
+        /* Top Center Timer Display */
+        #timer-box {
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: #ffffff;
+            border: 2px solid #2196F3;
+            padding: 8px 24px;
+            border-radius: 8px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 28px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            z-index: 10;
+            user-select: none;
+            pointer-events: none;
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: #ffffff;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 14px 20px;
+            border-radius: 8px;
+            pointer-events: none;
+            user-select: none;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+        #ui-overlay h1 {
+            margin: 0 0 8px 0;
+            font-size: 18px;
+        }
+        #ui-overlay p {
+            margin: 4px 0;
+            font-size: 13px;
+            color: #ccc;
+        }
+        #fullscreen-btn {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 18px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            z-index: 10;
+        }
+        #fullscreen-btn:hover {
+            background-color: #0b7dda;
+        }
+    </style>
+
+    <!-- Three.js Engine & GLTF Loader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+<body>
+
+    <!-- Countdown Timer -->
+    <div id="timer-box"><span id="timer-text">10.0</span>s</div>
+
+    <div id="ui-overlay">
+        <h1>3D Perimeter Viewer</h1>
+        <p><strong>POV Controls:</strong> <kbd>CTRL</kbd> + <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></p>
+        <p><strong>Drive Vehicle:</strong> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></p>
+        <p><strong>Rotate Vehicle:</strong> <kbd>J</kbd> (Left) | <kbd>L</kbd> (Right)</p>
+        <p><strong>Active View:</strong> <span id="current-view" style="color:#2196F3;">1/2 (Center)</span></p>
+    </div>
+
+    <button id="fullscreen-btn" onclick="toggleFullScreen()">Toggle Full Screen</button>
+    <div id="canvas-container"></div>
+
+    <script>
+        // --- DIMENSIONS & CONSTANTS ---
+        const LENGTH = 14.0;          // Inner floor length (Z-axis)
+        const WIDTH = 9.5;            // Inner floor width (X-axis)
+        const WALL_HEIGHT = 0.6;      // Wall height
+        const WALL_THICKNESS = 0.075; // Outward wall thickness
+        const EYE_HEIGHT = 1.6;       // Camera POV height
+
+        const MIN_FOOTPRINT = WIDTH * 0.10; // 0.95m
+        const MAX_FOOTPRINT = WIDTH * 0.30; // 2.85m
+
+        let scene, camera, renderer;
+        let activeObstacles = [];
+        let vehicleMesh = null;
+        let vehicleRadius = 0.45;     // Dynamic bounding radius (updated on GLTF load)
+        
+        // --- VEHICLE CONTROL VARIABLES ---
+        const MAX_SPEED = 2.0;        // Max speed (2 m/s)
+        const ACCELERATION = 2.0;     // Acceleration/Deceleration rate (2 m/s²)
+        const ROTATION_SPEED = 2.0;   // Rotation speed (2.0 rad/s)
+        
+        let vx = 0.0;                 // Velocity X
+        let vz = 0.0;                 // Velocity Z
+
+        // Key states
+        const keys = {
+            w: false, s: false, a: false, d: false,
+            j: false, l: false
+        };
+
+        // Timer Variables
+        let timerSeconds = 10.0;
+        let lastTime = performance.now();
+
+        // Camera position right behind south wall
+        const cameraZ = -(LENGTH / 2) - WALL_THICKNESS - 0.2; 
+        const povPositions = {
+            1: { x: -WIDTH/2 + (WIDTH * (1/3)), y: EYE_HEIGHT, z: cameraZ, name: "1/3 Position" },
+            2: { x: -WIDTH/2 + (WIDTH * (1/2)), y: EYE_HEIGHT, z: cameraZ, name: "1/2 Position (Center)" },
+            3: { x: -WIDTH/2 + (WIDTH * (2/3)), y: EYE_HEIGHT, z: cameraZ, name: "2/3 Position" }
+        };
+
+        init();
+        animate();
+
+        function init() {
+            // 1. Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a24);
+
+            // 2. Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 100);
+
+            // 3. Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            setPOV(2); // Initial POV (Center)
+
+            // 4. Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+
+            const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            sunLight.position.set(5, 15, -5);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            scene.add(sunLight);
+
+            const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+            fillLight.position.set(-5, 10, 10);
+            scene.add(fillLight);
+
+            // 5. Build Environment, Vehicle & Initial Obstacles
+            createFloor();
+            createPerimeterWalls();
+            loadVehicleModel();
+            spawnObstacles();
+
+            // 6. Event Listeners
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('keydown', onKeyDown);
+            window.addEventListener('keyup', onKeyUp);
+        }
+
+        // --- DARK GREY FLOOR ---
+        function createFloor() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#222226';
+            ctx.fillRect(0, 0, 512, 512);
+            
+            ctx.strokeStyle = '#33333b';
+            ctx.lineWidth = 6;
+            const tileSize = 64;
+            for (let x = 0; x <= 512; x += tileSize) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 512); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, x); ctx.lineTo(512, x); ctx.stroke();
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(WIDTH / 2, LENGTH / 2);
+
+            const floorMat = new THREE.MeshPhongMaterial({ map: texture, shininess: 10 });
+            const floorGeo = new THREE.PlaneGeometry(WIDTH, LENGTH);
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+        }
+
+        // --- OUTWARD SILVER PERIMETER WALLS ---
+        function createPerimeterWalls() {
+            const wallMaterial = new THREE.MeshPhongMaterial({
+                color: 0xe0e0e0,
+                specular: 0xffffff,
+                shininess: 80
+            });
+
+            const wallGroup = new THREE.Group();
+
+            // North & South
+            const nsGeo = new THREE.BoxGeometry(WIDTH + (WALL_THICKNESS * 2), WALL_HEIGHT, WALL_THICKNESS);
+            const northWall = new THREE.Mesh(nsGeo, wallMaterial);
+            northWall.position.set(0, WALL_HEIGHT / 2, (LENGTH / 2) + (WALL_THICKNESS / 2));
+
+            const southWall = new THREE.Mesh(nsGeo, wallMaterial);
+            southWall.position.set(0, WALL_HEIGHT / 2, -(LENGTH / 2) - (WALL_THICKNESS / 2));
+
+            // East & West
+            const ewGeo = new THREE.BoxGeometry(WALL_THICKNESS, WALL_HEIGHT, LENGTH);
+            const eastWall = new THREE.Mesh(ewGeo, wallMaterial);
+            eastWall.position.set((WIDTH / 2) + (WALL_THICKNESS / 2), WALL_HEIGHT / 2, 0);
+
+            const westWall = new THREE.Mesh(ewGeo, wallMaterial);
+            westWall.position.set(-(WIDTH / 2) - (WALL_THICKNESS / 2), WALL_HEIGHT / 2, 0);
+
+            wallGroup.add(northWall, southWall, eastWall, westWall);
+            wallGroup.children.forEach(w => { w.castShadow = true; w.receiveShadow = true; });
+            scene.add(wallGroup);
+        }
+
+        // --- LOAD PREMADE VEHICLE MODEL ---
+        function loadVehicleModel() {
+            const loader = new THREE.GLTFLoader();
+
+            loader.load(
+                'vehicle.glb',
+                function (gltf) {
+                    vehicleMesh = gltf.scene;
+
+                    // Measure dimensions
+                    const box = new THREE.Box3().setFromObject(vehicleMesh);
+                    const size = new THREE.Vector3();
+                    box.getSize(size);
+
+                    // Scale to 0.69m width proportionally
+                    const targetWidth = 0.69;
+                    const scaleFactor = targetWidth / (size.x > 0 ? size.x : 1);
+                    vehicleMesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
+                    // Recalculate scaled bounds & footprint radius
+                    const scaledBox = new THREE.Box3().setFromObject(vehicleMesh);
+                    const scaledSize = new THREE.Vector3();
+                    scaledBox.getSize(scaledSize);
+                    
+                    // Vehicle bounding radius on the XZ floor plane
+                    vehicleRadius = Math.hypot(scaledSize.x, scaledSize.z) / 2;
+
+                    // Center on floor
+                    const center = new THREE.Vector3();
+                    scaledBox.getCenter(center);
+                    vehicleMesh.position.x = -center.x;
+                    vehicleMesh.position.z = -center.z;
+                    vehicleMesh.position.y = -scaledBox.min.y;
+
+                    // Enable shadows
+                    vehicleMesh.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+
+                    scene.add(vehicleMesh);
+                },
+                undefined,
+                function (error) {
+                    console.warn("Could not load 'vehicle.glb'. Ensure file is served via local web server (e.g. python -m http.server).", error);
+                }
+            );
+        }
+
+        // --- VEHICLE MOVEMENT & COLLISION ENGINE ---
+        function updateVehicle(delta) {
+            if (!vehicleMesh) return;
+
+            // 1. Rotation (J = Left, L = Right)
+            if (keys.j) vehicleMesh.rotation.y += ROTATION_SPEED * delta;
+            if (keys.l) vehicleMesh.rotation.y -= ROTATION_SPEED * delta;
+
+            // 2. Velocity Intent (W/A/S/D)
+            let dirX = 0, dirZ = 0;
+            if (keys.w) dirZ += 1;
+            if (keys.s) dirZ -= 1;
+            if (keys.a) dirX += 1;
+            if (keys.d) dirX -= 1;
+
+            let targetVx = 0, targetVz = 0;
+            const inputLen = Math.hypot(dirX, dirZ);
+
+            if (inputLen > 0) {
+                targetVx = (dirX / inputLen) * MAX_SPEED;
+                targetVz = (dirZ / inputLen) * MAX_SPEED;
+            }
+
+            // Linear Acceleration / Deceleration
+            const diffX = targetVx - vx;
+            const diffZ = targetVz - vz;
+            const distVel = Math.hypot(diffX, diffZ);
+            const step = ACCELERATION * delta;
+
+            if (distVel <= step) {
+                vx = targetVx;
+                vz = targetVz;
+            } else {
+                vx += (diffX / distVel) * step;
+                vz += (diffZ / distVel) * step;
+            }
+
+            // Apply translation
+            vehicleMesh.position.x += vx * delta;
+            vehicleMesh.position.z += vz * delta;
+
+            // 3. COLLISION RESPONSE: OBSTACLES
+            activeObstacles.forEach(obs => {
+                const obsRadius = obs.userData.radius || 0.5;
+                const dx = vehicleMesh.position.x - obs.position.x;
+                const dz = vehicleMesh.position.z - obs.position.z;
+                const dist = Math.hypot(dx, dz);
+                const minDist = vehicleRadius + obsRadius;
+
+                if (dist < minDist && dist > 0) {
+                    // Push vehicle outside obstacle boundary
+                    const overlap = minDist - dist;
+                    const nx = dx / dist;
+                    const nz = dz / dist;
+
+                    vehicleMesh.position.x += nx * overlap;
+                    vehicleMesh.position.z += nz * overlap;
+
+                    // Kill velocity along collision normal
+                    const dot = vx * nx + vz * nz;
+                    if (dot < 0) {
+                        vx -= dot * nx;
+                        vz -= dot * nz;
+                    }
+                }
+            });
+
+            // 4. COLLISION RESPONSE: PERIMETER WALLS
+            const maxX = (WIDTH / 2) - vehicleRadius;
+            const maxZ = (LENGTH / 2) - vehicleRadius;
+
+            if (vehicleMesh.position.x > maxX) {
+                vehicleMesh.position.x = maxX;
+                vx = 0;
+            } else if (vehicleMesh.position.x < -maxX) {
+                vehicleMesh.position.x = -maxX;
+                vx = 0;
+            }
+
+            if (vehicleMesh.position.z > maxZ) {
+                vehicleMesh.position.z = maxZ;
+                vz = 0;
+            } else if (vehicleMesh.position.z < -maxZ) {
+                vehicleMesh.position.z = -maxZ;
+                vz = 0;
+            }
+        }
+
+        // --- OBSTACLE GENERATION & BOUNDS CHECK ---
+        function spawnObstacles() {
+            activeObstacles.forEach(obs => {
+                scene.remove(obs);
+                if (obs.geometry) obs.geometry.dispose();
+                if (obs.material) obs.material.dispose();
+            });
+            activeObstacles = [];
+
+            const shapes = ['prism', 'cylinder', 'wall'];
+            const obstacleColors = [0xEE2222, 0x2266FF]; // 1 Red, 1 Blue
+
+            obstacleColors.forEach(color => {
+                const shape = shapes[Math.floor(Math.random() * shapes.length)];
+                const height = THREE.MathUtils.randFloat(0.6, 1.8);
+                const footprint = THREE.MathUtils.randFloat(MIN_FOOTPRINT, MAX_FOOTPRINT);
+
+                let geometry;
+                let boundingRadius = footprint / 2;
+
+                if (shape === 'prism') {
+                    geometry = new THREE.CylinderGeometry(footprint / 2, footprint / 2, height, 3);
+                } else if (shape === 'cylinder') {
+                    geometry = new THREE.CylinderGeometry(footprint / 2, footprint / 2, height, 32);
+                } else {
+                    const wallDepth = 0.25;
+                    geometry = new THREE.BoxGeometry(footprint, height, wallDepth);
+                    boundingRadius = Math.hypot(footprint / 2, wallDepth / 2);
+                }
+
+                const material = new THREE.MeshPhongMaterial({
+                    color: color,
+                    shininess: 40
+                });
+
+                const obstacle = new THREE.Mesh(geometry, material);
+                obstacle.userData = { radius: boundingRadius };
+
+                const maxX = (WIDTH / 2) - boundingRadius;
+                const maxZ = (LENGTH / 2) - boundingRadius;
+
+                // Pick valid position that doesn't overlap vehicle or other obstacles
+                let validPos = false;
+                let attempts = 0;
+                let posX = 0, posZ = 0;
+
+                while (!validPos && attempts < 50) {
+                    attempts++;
+                    posX = THREE.MathUtils.randFloat(-maxX, maxX);
+                    posZ = THREE.MathUtils.randFloat(-maxZ, maxZ);
+
+                    let distToVehicle = 999;
+                    if (vehicleMesh) {
+                        distToVehicle = Math.hypot(posX - vehicleMesh.position.x, posZ - vehicleMesh.position.z);
+                    }
+
+                    let distToOtherObs = 999;
+                    activeObstacles.forEach(existing => {
+                        const d = Math.hypot(posX - existing.position.x, posZ - existing.position.z);
+                        distToOtherObs = Math.min(distToOtherObs, d);
+                    });
+
+                    // Ensure clear distance from vehicle and other objects
+                    if (distToVehicle > (boundingRadius + vehicleRadius + 0.3) && distToOtherObs > (boundingRadius + 0.8)) {
+                        validPos = true;
+                    }
+                }
+
+                obstacle.position.x = posX;
+                obstacle.position.z = posZ;
+                obstacle.position.y = height / 2;
+                obstacle.rotation.y = Math.random() * Math.PI;
+
+                obstacle.castShadow = true;
+                obstacle.receiveShadow = true;
+
+                scene.add(obstacle);
+                activeObstacles.push(obstacle);
+            });
+        }
+
+        // --- TIMER UPDATE LOOP ---
+        function updateTimer(delta) {
+            timerSeconds -= delta;
+
+            if (timerSeconds <= 0) {
+                timerSeconds = 10.0;
+                spawnObstacles();
+            }
+
+            document.getElementById('timer-text').innerText = timerSeconds.toFixed(1);
+        }
+
+        // --- CAMERA POV SWITCHING ---
+        function setPOV(index) {
+            const pov = povPositions[index];
+            if (!pov) return;
+
+            camera.position.set(pov.x, pov.y, pov.z);
+            camera.lookAt(pov.x, 0.1, 1.0);
+
+            document.getElementById('current-view').innerText = pov.name;
+        }
+
+        // --- KEYBOARD EVENT HANDLERS ---
+        function onKeyDown(event) {
+            if (event.ctrlKey) {
+                if (event.key === '1') { event.preventDefault(); setPOV(1); }
+                else if (event.key === '2') { event.preventDefault(); setPOV(2); }
+                else if (event.key === '3') { event.preventDefault(); setPOV(3); }
+                return;
+            }
+
+            const k = event.key.toLowerCase();
+            if (k in keys) {
+                keys[k] = true;
+            }
+        }
+
+        function onKeyUp(event) {
+            const k = event.key.toLowerCase();
+            if (k in keys) {
+                keys[k] = false;
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => console.log(err));
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const now = performance.now();
+            const delta = Math.min((now - lastTime) / 1000, 0.1);
+            lastTime = now;
+
+            updateTimer(delta);
+            updateVehicle(delta);
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
