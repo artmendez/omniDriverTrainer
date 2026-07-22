@@ -112,7 +112,7 @@
         let scene, camera, renderer;
         let activeObstacles = [];
         let vehicleMesh = null;
-        let vehicleRadius = 0.45;     // Dynamic bounding radius
+        let vehicleRadius = 0.45;     // Dynamic bounding radius (updated on GLTF load)
         
         // --- VEHICLE CONTROL VARIABLES ---
         const MAX_SPEED = 2.0;        // Max speed (2 m/s)
@@ -121,15 +121,6 @@
         
         let vx = 0.0;                 // Velocity X
         let vz = 0.0;                 // Velocity Z
-
-        // --- TRAIL LIGHT SYSTEM ---
-        const TRAIL_MAX_POINTS = 35;
-        const TRAIL_HEIGHT = 0.12;
-        let localRearLeft = new THREE.Vector3();
-        let localRearRight = new THREE.Vector3();
-        let historyLeft = [];
-        let historyRight = [];
-        let trailMeshLeft, trailMeshRight;
 
         // Key states
         const keys = {
@@ -259,7 +250,7 @@
             scene.add(wallGroup);
         }
 
-        // --- LOAD PREMADE VEHICLE MODEL & ATTACH TRAIL LIGHTS ---
+        // --- LOAD PREMADE VEHICLE MODEL ---
         function loadVehicleModel() {
             const loader = new THREE.GLTFLoader();
 
@@ -283,6 +274,7 @@
                     const scaledSize = new THREE.Vector3();
                     scaledBox.getSize(scaledSize);
                     
+                    // Vehicle bounding radius on the XZ floor plane
                     vehicleRadius = Math.hypot(scaledSize.x, scaledSize.z) / 2;
 
                     // Center on floor
@@ -301,114 +293,12 @@
                     });
 
                     scene.add(vehicleMesh);
-
-                    // --- TAIL LIGHT FIXTURES & POINT LIGHTS ---
-                    localRearLeft.set(-scaledSize.x * 0.32, scaledSize.y * 0.35, -scaledSize.z * 0.48);
-                    localRearRight.set(scaledSize.x * 0.32, scaledSize.y * 0.35, -scaledSize.z * 0.48);
-
-                    const tailLightGeo = new THREE.BoxGeometry(0.08, 0.05, 0.02);
-                    const tailLightMat = new THREE.MeshBasicMaterial({ color: 0xff0022 });
-
-                    const leftFixture = new THREE.Mesh(tailLightGeo, tailLightMat);
-                    leftFixture.position.copy(localRearLeft);
-                    vehicleMesh.add(leftFixture);
-
-                    const rightFixture = new THREE.Mesh(tailLightGeo, tailLightMat);
-                    rightFixture.position.copy(localRearRight);
-                    vehicleMesh.add(rightFixture);
-
-                    // Dynamic red point lights
-                    const lightLeft = new THREE.PointLight(0xff0033, 2.5, 3.0);
-                    lightLeft.position.copy(localRearLeft);
-                    vehicleMesh.add(lightLeft);
-
-                    const lightRight = new THREE.PointLight(0xff0033, 2.5, 3.0);
-                    lightRight.position.copy(localRearRight);
-                    vehicleMesh.add(lightRight);
-
-                    // Initialize Trail Meshes
-                    trailMeshLeft = createTrailMesh();
-                    trailMeshRight = createTrailMesh();
-                    scene.add(trailMeshLeft);
-                    scene.add(trailMeshRight);
                 },
                 undefined,
                 function (error) {
-                    console.warn("Could not load 'vehicle.glb'. Ensure file is served via local web server.", error);
+                    console.warn("Could not load 'vehicle.glb'. Ensure file is served via local web server (e.g. python -m http.server).", error);
                 }
             );
-        }
-
-        // --- TRAIL RIBBON MESH CREATION ---
-        function createTrailMesh() {
-            const maxVertices = (TRAIL_MAX_POINTS - 1) * 6;
-            const geometry = new THREE.BufferGeometry();
-            
-            const positions = new Float32Array(maxVertices * 3);
-            const colors = new Float32Array(maxVertices * 3);
-
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-            const material = new THREE.MeshBasicMaterial({
-                vertexColors: true,
-                side: THREE.DoubleSide,
-                transparent: true,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false
-            });
-
-            return new THREE.Mesh(geometry, material);
-        }
-
-        // --- UPDATE DYNAMIC TRAIL GEOMETRY ---
-        function updateTrailMesh(trailMesh, history) {
-            if (!trailMesh || history.length < 2) return;
-
-            const geometry = trailMesh.geometry;
-            const positions = geometry.attributes.position.array;
-            const colors = geometry.attributes.color.array;
-
-            let vertexIndex = 0;
-            let colorIndex = 0;
-
-            for (let i = 0; i < history.length - 1; i++) {
-                const p1 = history[i];
-                const p2 = history[i + 1];
-
-                // Fade alpha/color along the trail (1.0 at front, 0.0 at tail end)
-                const alpha1 = 1.0 - (i / TRAIL_MAX_POINTS);
-                const alpha2 = 1.0 - ((i + 1) / TRAIL_MAX_POINTS);
-
-                // Quad Vertices
-                const v1Top = [p1.x, p1.y + TRAIL_HEIGHT / 2, p1.z];
-                const v1Bot = [p1.x, p1.y - TRAIL_HEIGHT / 2, p1.z];
-                const v2Top = [p2.x, p2.y + TRAIL_HEIGHT / 2, p2.z];
-                const v2Bot = [p2.x, p2.y - TRAIL_HEIGHT / 2, p2.z];
-
-                // Triangle 1
-                positions.set([...v1Top, ...v1Bot, ...v2Top], vertexIndex);
-                // Triangle 2
-                positions.set([...v2Top, ...v1Bot, ...v2Bot], vertexIndex + 9);
-                vertexIndex += 18;
-
-                // Bright glowing red RGB: (1.0, 0.05, 0.15)
-                const c1 = [1.0 * alpha1, 0.05 * alpha1, 0.15 * alpha1];
-                const c2 = [1.0 * alpha2, 0.05 * alpha2, 0.15 * alpha2];
-
-                colors.set([...c1, ...c1, ...c2], colorIndex);
-                colors.set([...c2, ...c1, ...c2], colorIndex + 9);
-                colorIndex += 18;
-            }
-
-            // Zero out unused buffer vertices
-            for (let i = vertexIndex; i < positions.length; i++) {
-                positions[i] = 0;
-                colors[i] = 0;
-            }
-
-            geometry.attributes.position.needsUpdate = true;
-            geometry.attributes.color.needsUpdate = true;
         }
 
         // --- VEHICLE MOVEMENT & COLLISION ENGINE ---
@@ -461,6 +351,7 @@
                 const minDist = vehicleRadius + obsRadius;
 
                 if (dist < minDist && dist > 0) {
+                    // Push vehicle outside obstacle boundary
                     const overlap = minDist - dist;
                     const nx = dx / dist;
                     const nz = dz / dist;
@@ -468,6 +359,7 @@
                     vehicleMesh.position.x += nx * overlap;
                     vehicleMesh.position.z += nz * overlap;
 
+                    // Kill velocity along collision normal
                     const dot = vx * nx + vz * nz;
                     if (dot < 0) {
                         vx -= dot * nx;
@@ -495,20 +387,6 @@
                 vehicleMesh.position.z = -maxZ;
                 vz = 0;
             }
-
-            // 5. UPDATE LIGHT TRAIL POSITIONS
-            vehicleMesh.updateMatrixWorld();
-            const worldLeft = localRearLeft.clone().applyMatrix4(vehicleMesh.matrixWorld);
-            const worldRight = localRearRight.clone().applyMatrix4(vehicleMesh.matrixWorld);
-
-            historyLeft.unshift(worldLeft);
-            historyRight.unshift(worldRight);
-
-            if (historyLeft.length > TRAIL_MAX_POINTS) historyLeft.pop();
-            if (historyRight.length > TRAIL_MAX_POINTS) historyRight.pop();
-
-            updateTrailMesh(trailMeshLeft, historyLeft);
-            updateTrailMesh(trailMeshRight, historyRight);
         }
 
         // --- OBSTACLE GENERATION & BOUNDS CHECK ---
@@ -521,7 +399,7 @@
             activeObstacles = [];
 
             const shapes = ['prism', 'cylinder', 'wall'];
-            const obstacleColors = [0xEE2222, 0x2266FF];
+            const obstacleColors = [0xEE2222, 0x2266FF]; // 1 Red, 1 Blue
 
             obstacleColors.forEach(color => {
                 const shape = shapes[Math.floor(Math.random() * shapes.length)];
@@ -552,6 +430,7 @@
                 const maxX = (WIDTH / 2) - boundingRadius;
                 const maxZ = (LENGTH / 2) - boundingRadius;
 
+                // Pick valid position that doesn't overlap vehicle or other obstacles
                 let validPos = false;
                 let attempts = 0;
                 let posX = 0, posZ = 0;
@@ -572,6 +451,7 @@
                         distToOtherObs = Math.min(distToOtherObs, d);
                     });
 
+                    // Ensure clear distance from vehicle and other objects
                     if (distToVehicle > (boundingRadius + vehicleRadius + 0.3) && distToOtherObs > (boundingRadius + 0.8)) {
                         validPos = true;
                     }
