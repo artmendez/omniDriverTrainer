@@ -158,7 +158,6 @@
         
         // --- SCORE & GAMEPLAY VARIABLES ---
         let score = 0;
-        let lastRedPos = null;
 
         // --- VEHICLE CONTROL VARIABLES ---
         const MAX_SPEED = 2.0;        // Max speed (2 m/s)
@@ -537,7 +536,7 @@
             if (keys.j) vehicleMesh.rotation.y += ROTATION_SPEED * delta;
             if (keys.l) vehicleMesh.rotation.y -= ROTATION_SPEED * delta;
 
-            // Velocity Intent (W/A/S/D) - A (Left = -X) and D (Right = +X)
+            // Velocity Intent (W/A/S/D)
             let dirX = 0, dirZ = 0;
             if (keys.w) dirZ += 1;
             if (keys.s) dirZ -= 1;
@@ -577,20 +576,12 @@
                 const minDist = vehicleRadius + obsRadius;
 
                 if (dist < minDist && dist > 0) {
-                    // Check if Vehicle Hit Blue Object
+                    // Check if Vehicle Hit Blue Object (+20 Points)
                     if (obs.material && obs.material.color.getHex() === 0x2266FF && !obs.userData.hit) {
                         obs.userData.hit = true;
 
-                        // Find Red Object (or fallback to its saved initial location)
-                        const redObs = activeObstacles.find(o => o.material && o.material.color.getHex() === 0xEE2222);
-                        const redPos = redObs ? redObs.position : lastRedPos;
-
-                        if (redPos) {
-                            const distRedBlue = Math.hypot(redPos.x - obs.position.x, redPos.z - obs.position.z);
-                            const roundedDist = Math.round(distRedBlue);
-                            const pointsEarned = Math.round(roundedDist * timerSeconds * 20);
-                            addScore(pointsEarned);
-                        }
+                        // Award 20 Points for Vehicle Hit on Blue Object
+                        addScore(20);
 
                         // Remove Blue Obstacle after Scoring
                         scene.remove(obs);
@@ -736,7 +727,6 @@
                 if (obs.material) obs.material.dispose();
             });
             activeObstacles = [];
-            lastRedPos = null;
 
             const shapes = ['prism', 'cylinder', 'wall'];
             const obstacleColors = [0xEE2222, 0x2266FF];
@@ -802,11 +792,6 @@
 
                 obstacle.castShadow = true;
                 obstacle.receiveShadow = true;
-
-                // Cache original red position for blue object distance formula
-                if (color === 0xEE2222) {
-                    lastRedPos = obstacle.position.clone();
-                }
 
                 scene.add(obstacle);
                 activeObstacles.push(obstacle);
