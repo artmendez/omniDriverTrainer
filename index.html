@@ -46,6 +46,12 @@
             height: 52px;
             box-sizing: border-box;
         }
+        #score-box {
+            font-size: 20px;
+            color: #4CAF50;
+            border-color: #4CAF50;
+            min-width: 120px;
+        }
         #timer-box {
             font-size: 26px;
             letter-spacing: 1px;
@@ -108,8 +114,9 @@
 </head>
 <body>
 
-    <!-- Top HUD: Timer, Vehicle Orientation Dial & Cannon Angle -->
+    <!-- Top HUD: Score, Timer, Vehicle Orientation Dial & Cannon Angle -->
     <div id="hud-top">
+        <div id="score-box" class="hud-card">PTS: <span id="score-text">0</span></div>
         <div id="timer-box" class="hud-card"><span id="timer-text">10.0</span>s</div>
         <div id="dial-container" class="hud-card">
             <canvas id="dial-canvas" width="52" height="52"></canvas>
@@ -149,6 +156,10 @@
         let vehicleRadius = 0.45;     // Dynamic bounding radius (updated on GLTF load)
         let vehicleScaleFactor = 1.0;
         
+        // --- SCORE & GAMEPLAY VARIABLES ---
+        let score = 0;
+        let lastRedPos = null;
+
         // --- VEHICLE CONTROL VARIABLES ---
         const MAX_SPEED = 2.0;        // Max speed (2 m/s)
         const ACCELERATION = 2.0;     // Acceleration/Deceleration rate (2 m/s²)
@@ -234,6 +245,15 @@
             window.addEventListener('resize', onWindowResize);
             window.addEventListener('keydown', onKeyDown);
             window.addEventListener('keyup', onKeyUp);
+        }
+
+        // --- SCORE ENGINE ---
+        function addScore(points) {
+            score += points;
+            const scoreElem = document.getElementById('score-text');
+            if (scoreElem) {
+                scoreElem.innerText = score;
+            }
         }
 
         // --- DARK GREY FLOOR ---
@@ -462,9 +482,9 @@
                 hit = true;
             }
 
-            // Red Object Collision
+            // Red Object Collision (+10 Points)
             if (!hit) {
-                for (let i = 0; i < activeObstacles.length; i++) {
+                for (let i = activeObstacles.length - 1; i >= 0; i--) {
                     const obs = activeObstacles[i];
                     if (obs.material && obs.material.color.getHex() === 0xEE2222) {
                         const obsRadius = obs.userData.radius || 0.5;
@@ -477,6 +497,15 @@
 
                         if (distXZ < (activeProjectile.radius + obsRadius) && Math.abs(dy) < (obsHeight / 2 + activeProjectile.radius)) {
                             hit = true;
+                            
+                            // Award 10 Points for Cannon Hit on Red Object
+                            addScore(10);
+
+                            // Remove Red Target from Scene
+                            scene.remove(obs);
+                            if (obs.geometry) obs.geometry.dispose();
+                            if (obs.material) obs.material.dispose();
+                            activeObstacles.splice(i, 1);
                             break;
                         }
                     }
@@ -508,12 +537,12 @@
             if (keys.j) vehicleMesh.rotation.y += ROTATION_SPEED * delta;
             if (keys.l) vehicleMesh.rotation.y -= ROTATION_SPEED * delta;
 
-            // Velocity Intent (W/A/S/D) - Corrected A (Left = -X) and D (Right = +X)
+            // Velocity Intent (W/A/S/D) - A (Left = -X) and D (Right = +X)
             let dirX = 0, dirZ = 0;
             if (keys.w) dirZ += 1;
             if (keys.s) dirZ -= 1;
-            if (keys.a) dirX -= 1;
-            if (keys.d) dirX += 1;
+            if (keys.a) dirX += 1;
+            if (keys.d) dirX -= 1;
 
             let targetVx = 0, targetVz = 0;
             const inputLen = Math.hypot(dirX, dirZ);
@@ -540,7 +569,7 @@
             vehicleMesh.position.z += vz * delta;
 
             // Obstacle Collisions
-            activeObstacles.forEach(obs => {
+            activeObstacles.slice().forEach(obs => {
                 const obsRadius = obs.userData.radius || 0.5;
                 const dx = vehicleMesh.position.x - obs.position.x;
                 const dz = vehicleMesh.position.z - obs.position.z;
@@ -548,6 +577,30 @@
                 const minDist = vehicleRadius + obsRadius;
 
                 if (dist < minDist && dist > 0) {
+                    // Check if Vehicle Hit Blue Object
+                    if (obs.material && obs.material.color.getHex() === 0x2266FF && !obs.userData.hit) {
+                        obs.userData.hit = true;
+
+                        // Find Red Object (or fallback to its saved initial location)
+                        const redObs = activeObstacles.find(o => o.material && o.material.color.getHex() === 0xEE2222);
+                        const redPos = redObs ? redObs.position : lastRedPos;
+
+                        if (redPos) {
+                            const distRedBlue = Math.hypot(redPos.x - obs.position.x, redPos.z - obs.position.z);
+                            const roundedDist = Math.round(distRedBlue);
+                            const pointsEarned = Math.round(roundedDist * timerSeconds * 20);
+                            addScore(pointsEarned);
+                        }
+
+                        // Remove Blue Obstacle after Scoring
+                        scene.remove(obs);
+                        if (obs.geometry) obs.geometry.dispose();
+                        if (obs.material) obs.material.dispose();
+                        const idx = activeObstacles.indexOf(obs);
+                        if (idx !== -1) activeObstacles.splice(idx, 1);
+                        return;
+                    }
+
                     const overlap = minDist - dist;
                     const nx = dx / dist;
                     const nz = dz / dist;
@@ -631,7 +684,7 @@
             const speed = Math.hypot(vx, vz);
             if (speed > 0.05) {
                 // Canvas angle: vx (East/West) & -vz (North/South)
-                const moveAngle = Math.atan2(-vz, vx);
+                const moveAngle = Math.atan2(-vz, -vx);
                 ctx.beginPath();
                 ctx.arc(cx, cy, r, moveAngle - 0.35, moveAngle + 0.35);
                 ctx.strokeStyle = '#4CAF50'; // Bright Green arc
@@ -644,8 +697,6 @@
             if (vehicleMesh) {
                 rotY = vehicleMesh.rotation.y;
             }
-            // Corrected heading angle mapping:
-            // J (Turn Left) turns needle Left (-X); L (Turn Right) turns needle Right (+X)
             const headingAngle = Math.atan2(-Math.cos(rotY), -Math.sin(rotY));
 
             ctx.save();
@@ -685,6 +736,7 @@
                 if (obs.material) obs.material.dispose();
             });
             activeObstacles = [];
+            lastRedPos = null;
 
             const shapes = ['prism', 'cylinder', 'wall'];
             const obstacleColors = [0xEE2222, 0x2266FF];
@@ -750,6 +802,11 @@
 
                 obstacle.castShadow = true;
                 obstacle.receiveShadow = true;
+
+                // Cache original red position for blue object distance formula
+                if (color === 0xEE2222) {
+                    lastRedPos = obstacle.position.clone();
+                }
 
                 scene.add(obstacle);
                 activeObstacles.push(obstacle);
