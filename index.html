@@ -106,6 +106,45 @@
         #fullscreen-btn:hover {
             background-color: #0b7dda;
         }
+
+        /* Countdown & Start Prompts */
+        #start-prompt {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #ffffff;
+            border: 2px solid #2196F3;
+            padding: 24px 48px;
+            border-radius: 12px;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 100;
+            box-shadow: 0 0 25px rgba(33, 150, 243, 0.6);
+            text-align: center;
+            user-select: none;
+        }
+        #start-prompt:hover {
+            background: rgba(10, 25, 50, 0.95);
+            border-color: #00E5FF;
+        }
+        #countdown-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 140px;
+            font-weight: 900;
+            color: #ffeb3b;
+            text-shadow: 0 0 20px rgba(255, 235, 59, 0.9), 0 0 40px rgba(0,0,0,0.9);
+            z-index: 100;
+            pointer-events: none;
+            display: none;
+            font-family: 'Courier New', Courier, monospace;
+            user-select: none;
+        }
     </style>
 
     <!-- Three.js Engine & GLTF Loader -->
@@ -113,6 +152,10 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
+
+    <!-- Start Prompt & Big Countdown Displays -->
+    <div id="start-prompt" onclick="startSequence()">CLICK TO START</div>
+    <div id="countdown-overlay">3</div>
 
     <!-- Top HUD: Score, Timer, Vehicle Orientation Dial & Cannon Angle -->
     <div id="hud-top">
@@ -157,8 +200,10 @@
         let vehicleRadius = 0.45;     // Dynamic bounding radius (updated on GLTF load)
         let vehicleScaleFactor = 1.0;
         
-        // --- SCORE & GAMEPLAY VARIABLES ---
+        // --- GAME STATE VARIABLES ---
         let score = 0;
+        let gameActive = false;        // Driving & timer paused during countdown
+        let sequenceStarted = false;
 
         // --- AUDIO SYSTEM (Procedural Web Audio API) ---
         let audioCtx = null;
@@ -172,11 +217,40 @@
             }
         }
 
+        function playCountdownSound(isGo = false) {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.type = isGo ? 'triangle' : 'sine';
+            const freq = isGo ? 880 : 440; // High pitch for GO, lower for 3, 2, 1
+            osc.frequency.setValueAtTime(freq, now);
+
+            if (isGo) {
+                // Energetic double-tone pitch sweep for GO!
+                osc.frequency.exponentialRampToValueAtTime(1320, now + 0.25);
+                gain.gain.setValueAtTime(0.6, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.45);
+            } else {
+                gain.gain.setValueAtTime(0.4, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.2);
+            }
+        }
+
         function playCannonSound() {
             if (!audioCtx) return;
             const now = audioCtx.currentTime;
 
-            // Punchy sine sweep drop
             const osc = audioCtx.createOscillator();
             const oscGain = audioCtx.createGain();
             osc.type = 'triangle';
@@ -191,7 +265,6 @@
             osc.start(now);
             osc.stop(now + 0.22);
 
-            // Filtered White Noise Burst
             const bufferSize = audioCtx.sampleRate * 0.18;
             const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
             const data = buffer.getChannelData(0);
@@ -221,7 +294,6 @@
             if (!audioCtx) return;
             const now = audioCtx.currentTime;
 
-            // Low-end Sub-Bass Thump
             const osc = audioCtx.createOscillator();
             const oscGain = audioCtx.createGain();
             osc.type = 'sawtooth';
@@ -236,7 +308,6 @@
             osc.start(now);
             osc.stop(now + 0.55);
 
-            // Explosive Rumble Noise
             const bufferSize = audioCtx.sampleRate * 0.6;
             const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
             const data = buffer.getChannelData(0);
@@ -266,7 +337,6 @@
             if (!audioCtx) return;
             const now = audioCtx.currentTime;
 
-            // Bright Pickup Arpeggio (C5 -> E5 -> G5)
             const freqs = [523.25, 659.25, 783.99];
             freqs.forEach((freq, i) => {
                 const osc = audioCtx.createOscillator();
@@ -360,17 +430,53 @@
             fillLight.position.set(-5, 10, 10);
             scene.add(fillLight);
 
-            // 5. Build Environment, Vehicle & Initial Obstacles
+            // 5. Build Environment & Load Vehicle FIRST (Obstacles spawn after vehicle)
             createFloor();
             createPerimeterWalls();
             loadVehicleModel();
-            spawnObstacles();
 
             // 6. Event Listeners
             window.addEventListener('resize', onWindowResize);
             window.addEventListener('keydown', onKeyDown);
             window.addEventListener('keyup', onKeyUp);
             window.addEventListener('pointerdown', initAudio);
+        }
+
+        // --- START COUNTDOWN SEQUENCE ---
+        function startSequence() {
+            initAudio();
+            if (sequenceStarted) return;
+            sequenceStarted = true;
+
+            const promptElem = document.getElementById('start-prompt');
+            if (promptElem) promptElem.style.display = 'none';
+
+            const countOverlay = document.getElementById('countdown-overlay');
+            countOverlay.style.display = 'block';
+
+            let count = 3;
+            countOverlay.innerText = count;
+            countOverlay.style.color = '#ffeb3b';
+            playCountdownSound(false);
+
+            const countInterval = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    countOverlay.innerText = count;
+                    playCountdownSound(false);
+                } else if (count === 0) {
+                    countOverlay.innerText = "GO!";
+                    countOverlay.style.color = '#4CAF50';
+                    playCountdownSound(true);
+
+                    // Spawn obstacles AFTER vehicle is positioned & start game action
+                    spawnObstacles();
+                    gameActive = true;
+                } else {
+                    clearInterval(countInterval);
+                    countOverlay.style.display = 'none';
+                }
+            }, 1000);
         }
 
         // --- SCORE ENGINE ---
@@ -473,10 +579,12 @@
                     // Vehicle bounding radius on the XZ floor plane
                     vehicleRadius = Math.hypot(scaledWidth, scaledLength) / 2;
 
-                    // Center vehicle mesh on floor
-                    vehicleMesh.position.x = -unscaledCenter.x * vehicleScaleFactor;
-                    vehicleMesh.position.z = -unscaledCenter.z * vehicleScaleFactor;
+                    // POSITION VEHICLE AT WALL CLOSEST TO POV (SOUTH WALL), CENTERED
+                    const initialZ = -(LENGTH / 2) + vehicleRadius + 0.3; // Placed near south wall
+                    vehicleMesh.position.x = 0;
+                    vehicleMesh.position.z = initialZ;
                     vehicleMesh.position.y = -unscaledBox.min.y * vehicleScaleFactor;
+                    vehicleMesh.rotation.y = 0; // Facing North into arena
 
                     // Enable shadows
                     vehicleMesh.traverse((child) => {
@@ -533,7 +641,7 @@
 
         // --- FIRE CANNON PROJECTILE ---
         function fireCannon() {
-            if (activeProjectile || !cannonMesh || !cannonPivot || !cannonMesh.visible) return;
+            if (!gameActive || activeProjectile || !cannonMesh || !cannonPivot || !cannonMesh.visible) return;
 
             // Play firing sound effect
             playCannonSound();
@@ -593,7 +701,6 @@
 
         // --- EXCITING PARTICLE EXPLOSION EFFECT ---
         function createExplosion(pos) {
-            // Play explosion audio
             playExplosionSound();
 
             const particleCount = 90;
@@ -602,21 +709,18 @@
             const colors = new Float32Array(particleCount * 3);
             const velocities = [];
 
-            // Palette: Fiery Core -> Bright Orange/Yellow -> Crimson Red
             const colorPalette = [
-                new THREE.Color(0xffffff), // Core Flash White
-                new THREE.Color(0xffea00), // Bright Yellow
-                new THREE.Color(0xff6600), // Fire Orange
-                new THREE.Color(0xee2200)  // Deep Crimson
+                new THREE.Color(0xffffff),
+                new THREE.Color(0xffea00),
+                new THREE.Color(0xff6600),
+                new THREE.Color(0xee2200)
             ];
 
             for (let i = 0; i < particleCount; i++) {
-                // Initial origin centered at impact
                 positions[i * 3] = pos.x;
                 positions[i * 3 + 1] = pos.y;
                 positions[i * 3 + 2] = pos.z;
 
-                // Spherical explosion direction vector
                 const u = Math.random();
                 const v = Math.random();
                 const theta = u * 2.0 * Math.PI;
@@ -625,7 +729,7 @@
 
                 velocities.push(new THREE.Vector3(
                     speed * Math.sin(phi) * Math.cos(theta),
-                    speed * Math.sin(phi) * Math.sin(theta) + THREE.MathUtils.randFloat(1.5, 4.0), // Upward burst bias
+                    speed * Math.sin(phi) * Math.sin(theta) + THREE.MathUtils.randFloat(1.5, 4.0),
                     speed * Math.cos(phi)
                 ));
 
@@ -650,7 +754,6 @@
             const pSystem = new THREE.Points(geometry, material);
             scene.add(pSystem);
 
-            // Dynamic Point Light Flash
             const flashLight = new THREE.PointLight(0xff7700, 6.0, 8.0);
             flashLight.position.copy(pos);
             scene.add(flashLight);
@@ -659,7 +762,7 @@
                 mesh: pSystem,
                 light: flashLight,
                 velocities: velocities,
-                life: 0.8,      // Lifetime in seconds
+                life: 0.8,
                 maxLife: 0.8
             });
         }
@@ -671,7 +774,6 @@
                 exp.life -= delta;
 
                 if (exp.life <= 0) {
-                    // Remove particle mesh & light
                     scene.remove(exp.mesh);
                     if (exp.mesh.geometry) exp.mesh.geometry.dispose();
                     if (exp.mesh.material) exp.mesh.material.dispose();
@@ -683,28 +785,23 @@
 
                 const lifeFactor = exp.life / exp.maxLife;
 
-                // Fade Point Light Flash
                 if (exp.light) {
                     exp.light.intensity = lifeFactor * 6.0;
                 }
 
-                // Fade Particle Material Opacity
                 exp.mesh.material.opacity = lifeFactor;
 
-                // Advance Particle Positions & Apply Gravity/Drag
                 const posArr = exp.mesh.geometry.attributes.position.array;
                 for (let i = 0; i < exp.velocities.length; i++) {
                     const vel = exp.velocities[i];
 
-                    // Gravity & Drag
                     vel.y -= GRAVITY * 1.2 * delta;
-                    vel.multiplyScalar(0.96); // Drag factor
+                    vel.multiplyScalar(0.96);
 
                     posArr[i * 3]     += vel.x * delta;
                     posArr[i * 3 + 1] += vel.y * delta;
                     posArr[i * 3 + 2] += vel.z * delta;
 
-                    // Ground bounce plane
                     if (posArr[i * 3 + 1] < 0.02) {
                         posArr[i * 3 + 1] = 0.02;
                         vel.y = -vel.y * 0.3;
@@ -729,12 +826,10 @@
             const pos = activeProjectile.mesh.position;
             let hit = false;
 
-            // Ground collision
             if (pos.y <= activeProjectile.radius) {
                 hit = true;
             }
 
-            // Red Object Collision (+10 Points & Particle Explosion)
             if (!hit) {
                 for (let i = activeObstacles.length - 1; i >= 0; i--) {
                     const obs = activeObstacles[i];
@@ -749,14 +844,9 @@
 
                         if (distXZ < (activeProjectile.radius + obsRadius) && Math.abs(dy) < (obsHeight / 2 + activeProjectile.radius)) {
                             hit = true;
-                            
-                            // Award 10 Points for Cannon Hit on Red Object
                             addScore(10);
-
-                            // Trigger Particle Explosion & Audio Sound
                             createExplosion(obs.position.clone());
 
-                            // Remove Red Target from Scene
                             scene.remove(obs);
                             if (obs.geometry) obs.geometry.dispose();
                             if (obs.material) obs.material.dispose();
@@ -767,7 +857,6 @@
                 }
             }
 
-            // Out of bounds
             if (Math.abs(pos.x) > WIDTH / 2 + 1.0 || Math.abs(pos.z) > LENGTH / 2 + 1.0) {
                 hit = true;
             }
@@ -786,7 +875,7 @@
 
         // --- VEHICLE MOVEMENT & COLLISION ENGINE ---
         function updateVehicle(delta) {
-            if (!vehicleMesh) return;
+            if (!vehicleMesh || !gameActive) return;
 
             // Rotation (J = Left, L = Right)
             if (keys.j) vehicleMesh.rotation.y += ROTATION_SPEED * delta;
@@ -832,17 +921,11 @@
                 const minDist = vehicleRadius + obsRadius;
 
                 if (dist < minDist && dist > 0) {
-                    // Check if Vehicle Hit Blue Object (+20 Points & Score Chime)
                     if (obs.material && obs.material.color.getHex() === 0x2266FF && !obs.userData.hit) {
                         obs.userData.hit = true;
-
-                        // Play Score Sound Effect
                         playScoreSound();
-
-                        // Award 20 Points for Vehicle Hit on Blue Object
                         addScore(20);
 
-                        // Remove Blue Obstacle after Scoring
                         scene.remove(obs);
                         if (obs.geometry) obs.geometry.dispose();
                         if (obs.material) obs.material.dispose();
@@ -891,14 +974,12 @@
 
         // --- UPDATE TOP HUD ---
         function updateHUD() {
-            // Update Cannon Pitch Value Display
             const cannonDeg = (cannonAngle * 180 / Math.PI).toFixed(1);
             const cannonElem = document.getElementById('cannon-text');
             if (cannonElem) {
                 cannonElem.innerText = cannonDeg + '°';
             }
 
-            // Render Vehicle Orientation Dial
             const canvas = document.getElementById('dial-canvas');
             if (!canvas) return;
             const ctx = canvas.getContext('2d');
@@ -908,41 +989,34 @@
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Dial Base Outer Ring
             ctx.beginPath();
             ctx.arc(cx, cy, r, 0, Math.PI * 2);
             ctx.strokeStyle = '#334466';
             ctx.lineWidth = 3;
             ctx.stroke();
 
-            // Highlight Active Rotation on Border (J = Left, L = Right)
             if (keys.j || keys.l) {
                 ctx.beginPath();
                 if (keys.j) {
-                    // Turn Left: Top-Left border quadrant arc
                     ctx.arc(cx, cy, r, -Math.PI * 0.5, -Math.PI, true);
                 } else {
-                    // Turn Right: Top-Right border quadrant arc
                     ctx.arc(cx, cy, r, -Math.PI * 0.5, 0, false);
                 }
-                ctx.strokeStyle = '#00E5FF'; // Bright Cyan arc
+                ctx.strokeStyle = '#00E5FF';
                 ctx.lineWidth = 5;
                 ctx.stroke();
             }
 
-            // Highlight Active Direction of Movement on Dial Border
             const speed = Math.hypot(vx, vz);
             if (speed > 0.05) {
-                // Canvas angle: vx (East/West) & -vz (North/South)
                 const moveAngle = Math.atan2(-vz, -vx);
                 ctx.beginPath();
                 ctx.arc(cx, cy, r, moveAngle - 0.35, moveAngle + 0.35);
-                ctx.strokeStyle = '#4CAF50'; // Bright Green arc
+                ctx.strokeStyle = '#4CAF50';
                 ctx.lineWidth = 5;
                 ctx.stroke();
             }
 
-            // Render Triangular Orientation Needle
             let rotY = 0;
             if (vehicleMesh) {
                 rotY = vehicleMesh.rotation.y;
@@ -957,19 +1031,18 @@
             const needleBase = 6;
 
             ctx.beginPath();
-            ctx.moveTo(needleLen, 0);                 // Tip
-            ctx.lineTo(-needleBase, -needleBase);     // Rear Left
-            ctx.lineTo(-needleBase / 2, 0);           // Inset Center
-            ctx.lineTo(-needleBase, needleBase);      // Rear Right
+            ctx.moveTo(needleLen, 0);                 
+            ctx.lineTo(-needleBase, -needleBase);     
+            ctx.lineTo(-needleBase / 2, 0);           
+            ctx.lineTo(-needleBase, needleBase);      
             ctx.closePath();
 
-            ctx.fillStyle = '#FF3D00'; // Bright Orange-Red Needle
+            ctx.fillStyle = '#FF3D00';
             ctx.fill();
             ctx.strokeStyle = '#FFFFFF';
             ctx.lineWidth = 1;
             ctx.stroke();
 
-            // Center Pivot Dot
             ctx.beginPath();
             ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
             ctx.fillStyle = '#FFFFFF';
@@ -1023,7 +1096,7 @@
                 let attempts = 0;
                 let posX = 0, posZ = 0;
 
-                while (!validPos && attempts < 50) {
+                while (!validPos && attempts < 100) {
                     attempts++;
                     posX = THREE.MathUtils.randFloat(-maxX, maxX);
                     posZ = THREE.MathUtils.randFloat(-maxZ, maxZ);
@@ -1039,7 +1112,8 @@
                         distToOtherObs = Math.min(distToOtherObs, d);
                     });
 
-                    if (distToVehicle > (boundingRadius + vehicleRadius + 0.3) && distToOtherObs > (boundingRadius + 0.8)) {
+                    // Ensure objects do NOT spawn on top of vehicle or each other
+                    if (distToVehicle > (boundingRadius + vehicleRadius + 1.2) && distToOtherObs > (boundingRadius + 0.8)) {
                         validPos = true;
                     }
                 }
@@ -1059,6 +1133,8 @@
 
         // --- TIMER UPDATE LOOP ---
         function updateTimer(delta) {
+            if (!gameActive) return;
+
             timerSeconds -= delta;
 
             if (timerSeconds <= 0) {
@@ -1082,7 +1158,9 @@
 
         // --- KEYBOARD EVENT HANDLERS ---
         function onKeyDown(event) {
-            initAudio();
+            if (!sequenceStarted) {
+                startSequence();
+            }
 
             if (event.ctrlKey) {
                 if (event.key === '1') { event.preventDefault(); setPOV(1); }
