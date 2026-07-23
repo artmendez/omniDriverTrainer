@@ -1,6 +1,7 @@
 # omniDriverTrainer
 
-A Python port of the OmniDriver Trainer 3D perimeter driving and firing game.
+OmniDriver Trainer 3D perimeter driving and firing game.
+(c) 2026 / A. Méndez (mendez@tec.mx)
 
 This repository includes:
 - `index.html` — the original Three.js browser game version
