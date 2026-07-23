@@ -1,5 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+    <!-- Omnidrive trainer-->
+    <!-- (c)2026 A. Mendez (mendez@tec.mx)
+    <!-- Github: github.com/andresmendez/omnidrive-trainer -->
+    <!-- 1. Download the files to a folder.-->
+    <!-- 2. Open a terminal window in the folder.-->
+    <!-- 3. Run a local web server (e.g., python -m http.server 8000).-->
+    <!-- 4. Open a web browser and navigate to http://localhost:8000 -->
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -53,7 +61,7 @@
             min-width: 120px;
         }
 
-        /* Six Bar Indicator (Left of Timer) */
+        /* Cycles lefft: Six Bar Indicator (Left of Timer) */
         #bars-box {
             display: flex;
             gap: 5px;
@@ -216,7 +224,7 @@
         }
     </style>
 
-    <!-- Three.js Engine & GLTF Loader -->
+    <!-- Uses Three.js Engine & GLTF Loader. Browsers block loading external files, so this must be run from a server -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
@@ -232,7 +240,7 @@
         <button id="restart-btn" onclick="restartGame()">PLAY AGAIN</button>
     </div>
 
-    <!-- Top HUD: Score, 6-Bar Indicator, Timer, Vehicle Orientation Dial & Cannon Angle -->
+    <!-- This is the Top HUD: Score, 6-Bar Indicator, Timer, Vehicle Orientation Dial & Cannon Angle -->
     <div id="hud-top">
         <div id="score-box" class="hud-card">PTS: <span id="score-text">0</span></div>
         <div id="bars-box" class="hud-card">
@@ -266,19 +274,21 @@
     <div id="canvas-container"></div>
 
     <script>
-        // --- DIMENSIONS & CONSTANTS ---
+        // GENERAL GAME PARAMETERS. May be modified for different difficulty levels or vehicle sizes.
+        // --- DIMENSIONS & CONSTANTS (distance values are aproximately in meters)---
         const LENGTH = 14.0;          // Inner floor length (Z-axis)
         const WIDTH = 9.5;            // Inner floor width (X-axis)
         const WALL_HEIGHT = 0.6;      // Wall height
         const WALL_THICKNESS = 0.075; // Outward wall thickness
-        const EYE_HEIGHT = 1.6;       // Camera POV height
+        const EYE_HEIGHT = 1.65;       // Camera POV height
 
+        // some scaling was needed
         const MIN_FOOTPRINT = WIDTH * 0.10; // 0.95m
         const MAX_FOOTPRINT = WIDTH * 0.30; // 2.85m
 
         let scene, camera, renderer;
         let activeObstacles = [];
-        let activeExplosions = [];     // Particle explosion instances
+        let activeExplosions = [];     // Particle explosion instances array
         let vehicleMesh = null;
         let vehicleRadius = 0.45;     // Dynamic bounding radius (updated on GLTF load)
         let vehicleScaleFactor = 1.0;
@@ -290,7 +300,8 @@
         let isGameOver = false;
         let sequenceStarted = false;
 
-        // --- AUDIO SYSTEM (Procedural Web Audio API) ---
+        // AUDIO SYSTEM (Procedural Web Audio API). Makes kinda retrogame sounds, but saves work.
+        // No external files needed, and it's fun to play with waveforms, frequencies, and envelopes. All sounds are generated in real-time. :)
         let audioCtx = null;
 
         function initAudio() {
@@ -458,7 +469,7 @@
             });
         }
 
-        // --- VEHICLE CONTROL VARIABLES ---
+        // VEHICLE CONTROL VARIABLES... handle with care. They will affect the difficulty of the game and vehicle responsiveness.
         const MAX_SPEED = 2.0;        // Max speed (2 m/s)
         const ACCELERATION = 2.0;     // Acceleration/Deceleration rate (2 m/s²)
         const ROTATION_SPEED = 2.0;   // Rotation speed (2.0 rad/s)
@@ -466,11 +477,16 @@
         let vx = 0.0;                 // Velocity X
         let vz = 0.0;                 // Velocity Z
 
-        // --- CANNON & PROJECTILE VARIABLES ---
+        // CANNON & PROJECTILE VARIABLES --- This affects how the cannon shoots the dart.
         const CANNON_SPEED = 2.5;                // Angular speed (2.5 rad/s)
         const MIN_CANNON_ANGLE = 0.0;            // 0 degrees
         const MAX_CANNON_ANGLE = Math.PI / 3;    // 60 degrees (in radians)
         const LAUNCH_SPEED = 7.0;                // Muzzle velocity (7.0 m/s)
+
+        // Gravity constant for projectile motion calculations. This is used to simulate the effect of gravity on the projectile after it is fired from the cannon.
+        // You may want to adjust it to simulate different gravitational environments or to make the game easier/harder.
+        // Want ideas? (Moon: 1.62 m/s², Mars: 3.71 m/s², Jupiter: 24.79 m/s²)
+        // Set GRAVITY=0 to make the dart like a laser beam.
         const GRAVITY = 9.81;                    // Earth gravity acceleration (9.81 m/s²)
 
         let cannonPivot = null;
@@ -485,12 +501,15 @@
             i: false, k: false
         };
 
-        // Timer Variables
+        // Timer Variables. You may adjust timerSeconds to give more time to complete a target set.
         let timerSeconds = 10.0;
         let lastTime = performance.now();
 
         // Camera position right behind south wall
-        const cameraZ = -(LENGTH / 2) - WALL_THICKNESS - 0.2; 
+        const STEPBACK_DISTANCE = 1.0; // How far back is the viewer standing behind the south wall.
+        // FRC drivers typically stand 0.75 to 1.0 meters behind the wall, so this is a reasonable distance for a training scenario.
+        const cameraZ = -(LENGTH / 2) - WALL_THICKNESS - STEPBACK_DISTANCE; 
+        // This predefines POV positions (station 1, station 2, station 3) along the south wall. The user can switch between these positions using CTRL+1, CTRL+2, and CTRL+3.
         const povPositions = {
             1: { x: -WIDTH/2 + (WIDTH * (1/3)), y: EYE_HEIGHT, z: cameraZ, name: "1/3 Position" },
             2: { x: -WIDTH/2 + (WIDTH * (1/2)), y: EYE_HEIGHT, z: cameraZ, name: "1/2 Position (Center)" },
@@ -500,6 +519,7 @@
         init();
         animate();
 
+        // Gets the whole thing ready...
         function init() {
             // 1. Scene
             scene = new THREE.Scene();
@@ -546,7 +566,7 @@
             window.addEventListener('pointerdown', initAudio);
         }
 
-        // --- BARS HUD UPDATE ---
+        // --- BARS HUD UPDATE --- The BARS are the cycles or lives left. A bar will run out with a timer.
         function updateBarsHUD() {
             const barElems = document.querySelectorAll('#bars-box .bar');
             barElems.forEach((bar, index) => {
@@ -558,7 +578,7 @@
             });
         }
 
-        // --- START COUNTDOWN SEQUENCE ---
+        // START COUNTDOWN SEQUENCE 
         function startSequence() {
             initAudio();
             if (sequenceStarted) return;
@@ -594,7 +614,7 @@
             }, 1000);
         }
 
-        // --- RESTART GAME ---
+        // RESTART GAME
         function restartGame() {
             const goElem = document.getElementById('gameover-overlay');
             if (goElem) goElem.style.display = 'none';
@@ -609,7 +629,7 @@
             vx = 0;
             vz = 0;
 
-            // Reset Vehicle Position to South Wall Center
+            // This will reset Vehicle Position to South Wall Center
             if (vehicleMesh) {
                 const initialZ = -(LENGTH / 2) + vehicleRadius + 0.3;
                 vehicleMesh.position.set(0, vehicleMesh.position.y, initialZ);
@@ -639,7 +659,7 @@
             if (goElem) goElem.style.display = 'block';
         }
 
-        // --- SCORE ENGINE ---
+        // SCORE ENGINE --- You can change this to modify scoring rules and promote scoring strategies.
         function addScore(points) {
             score += points;
             const scoreElem = document.getElementById('score-text');
@@ -648,7 +668,7 @@
             }
         }
 
-        // --- DARK GREY FLOOR ---
+        // The DARK GREY FLOOR. I wanted to make the dark grey carpet... but I think this works.
         function createFloor() {
             const canvas = document.createElement('canvas');
             canvas.width = 512;
@@ -679,7 +699,7 @@
             scene.add(floor);
         }
 
-        // --- OUTWARD SILVER PERIMETER WALLS ---
+        // --- OUTWARD SILVER PERIMETER WALLS. Inspired by old faithful aluminum extrusion walls. I wanted to make them look like brushed aluminum, but I think this works.
         function createPerimeterWalls() {
             const wallMaterial = new THREE.MeshPhongMaterial({
                 color: 0xe0e0e0,
@@ -708,7 +728,9 @@
             scene.add(wallGroup);
         }
 
-        // --- LOAD PREMADE VEHICLE MODEL ---
+        // LOAD PREMADE VEHICLE MODEL: The vehicle will be loaded from file 'vehicle.glb'. This is a GLTF 3D model file.
+        // I used a sample mechanum wheel robot model with an Arduino on top... LOL.
+        // Vehicle model is just visuals. Does not affect physics or collision detection. The vehicle's bounding radius is calculated from the model's dimensions.
         function loadVehicleModel() {
             const loader = new THREE.GLTFLoader();
 
@@ -790,7 +812,7 @@
             );
         }
 
-        // --- FIRE CANNON PROJECTILE ---
+        // FIRE CANNON PROJECTILE!! ;)
         function fireCannon() {
             if (!gameActive || isGameOver || activeProjectile || !cannonMesh || !cannonPivot || !cannonMesh.visible) return;
 
@@ -834,7 +856,7 @@
             };
         }
 
-        // --- CANNON ELEVATION CONTROL ---
+        // This is the CANNON ELEVATION CONTROL ---
         function updateCannon(delta) {
             if (!cannonPivot) return;
 
@@ -849,7 +871,7 @@
             cannonPivot.rotation.x = -cannonAngle;
         }
 
-        // --- EXCITING PARTICLE EXPLOSION EFFECT ---
+        // Here comes the so very EXCITING PARTICLE EXPLOSION EFFECT!!
         function createExplosion(pos) {
             playExplosionSound();
 
@@ -917,7 +939,7 @@
             });
         }
 
-        // --- UPDATE EXPLOSION PARTICLES & LIGHTS ---
+        // UPDATE EXPLOSION PARTICLES & LIGHTS
         function updateExplosions(delta) {
             for (let e = activeExplosions.length - 1; e >= 0; e--) {
                 const exp = activeExplosions[e];
@@ -961,7 +983,7 @@
             }
         }
 
-        // --- CHECK CLEAR FIELD & RESPAWN IMMEDIATELY ---
+        // CHECK CLEAR FIELD & RESPAWN IMMEDIATELY (new object set)
         function checkFieldCleared() {
             if (activeObstacles.length === 0 && gameActive) {
                 // Reset timer immediately on clearing both objects, NO bar removed
@@ -970,7 +992,7 @@
             }
         }
 
-        // --- UPDATE BALLISTIC PROJECTILE PHYSICS ---
+        // UPDATE BALLISTIC PROJECTILE PHYSICS
         function updateProjectile(delta) {
             if (!activeProjectile) return;
 
@@ -1034,7 +1056,7 @@
             }
         }
 
-        // --- VEHICLE MOVEMENT & COLLISION ENGINE ---
+        // VEHICLE MOVEMENT & COLLISION ENGINE. Do not expect super realistic collisions or careful bounding box calculations. This is a simple arcade-style collision detection and response system.
         function updateVehicle(delta) {
             if (!vehicleMesh || !gameActive || isGameOver) return;
 
@@ -1131,7 +1153,7 @@
             updateCannon(delta);
         }
 
-        // --- UPDATE TOP HUD ---
+        // -UPDATE TOP HUD -
         function updateHUD() {
             const cannonDeg = (cannonAngle * 180 / Math.PI).toFixed(1);
             const cannonElem = document.getElementById('cannon-text');
@@ -1210,7 +1232,7 @@
             ctx.restore();
         }
 
-        // --- OBSTACLE GENERATION & BOUNDS CHECK ---
+        // OBSTACLE GENERATION & BOUNDS CHECK... we dont want obstacles too close to the vehicle or overlapping each other. This function will spawn a new set of obstacles in random positions and shapes.
         function spawnObstacles() {
             activeObstacles.forEach(obs => {
                 scene.remove(obs);
@@ -1289,7 +1311,7 @@
             });
         }
 
-        // --- TIMER UPDATE LOOP & BAR DECAY ---
+        // TTIMER UPDATE LOOP & BAR DECAY
         function updateTimer(delta) {
             if (!gameActive || isGameOver) return;
 
@@ -1314,7 +1336,9 @@
             }
         }
 
-        // --- CAMERA POV SWITCHING ---
+        // You can switch POV positions to simulate different positions along the driver area.
+        // CAMERA POV SWITCHING. Kind of cumbersome, but I wanted to give the player a choice of camera angles.
+        // When I port this to a VR viewer version or into an Oculus, I will have to rethink the camera system and controls. For now, this is a simple POV switcher.
         function setPOV(index) {
             const pov = povPositions[index];
             if (!pov) return;
@@ -1325,7 +1349,7 @@
             document.getElementById('current-view').innerText = pov.name;
         }
 
-        // --- KEYBOARD EVENT HANDLERS ---
+        //KEYBOARD EVENT HANDLERS
         function onKeyDown(event) {
             if (!sequenceStarted && !isGameOver) {
                 startSequence();
