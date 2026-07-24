@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
     <!-- Omnidrive trainer-->
-    <!-- (c)2026 A. Mendez (mendez@tec.mx)
+    <!-- (c)2026 A. Mendez (mendez@tec.mx) -->
     <!-- Github: github.com/andresmendez/omnidrive-trainer -->
     <!-- 1. Download the files to a folder.-->
     <!-- 2. Open a terminal window in the folder.-->
@@ -25,7 +25,51 @@
         #canvas-container {
             width: 100%;
             height: 100%;
-       }
+        }
+
+        /* Top Left Input Control Mode UI */
+        #input-mode-box {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 20;
+            user-select: none;
+            pointer-events: none;
+        }
+        .mode-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: rgba(0, 0, 0, 0.85);
+            border: 2px solid #333344;
+            border-radius: 8px;
+            color: #666677;
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+            font-size: 13px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            transition: all 0.25s ease;
+        }
+        .mode-icon svg {
+            fill: currentColor;
+        }
+        .mode-icon.active {
+            border-color: #00E5FF;
+            color: #00E5FF;
+            box-shadow: 0 0 12px rgba(0, 229, 255, 0.5);
+            background: rgba(0, 229, 255, 0.12);
+        }
+        .mode-icon.disabled {
+            opacity: 0.35;
+            border-color: #222233;
+            color: #444455;
+        }
+
         /* Top Center HUD Container */
         #hud-top {
             position: absolute;
@@ -61,7 +105,7 @@
             min-width: 120px;
         }
 
-        /* Cycles lefft: Six Bar Indicator (Left of Timer) */
+        /* Cycles left: Six Bar Indicator (Left of Timer) */
         #bars-box {
             display: flex;
             gap: 5px;
@@ -102,7 +146,7 @@
         }
         #ui-overlay {
             position: absolute;
-            top: 15px;
+            top: 65px;
             left: 15px;
             color: #ffffff;
             background: rgba(0, 0, 0, 0.8);
@@ -224,11 +268,23 @@
         }
     </style>
 
-    <!-- Uses Three.js Engine & GLTF Loader. Browsers block loading external files, so this must be run from a server -->
+    <!-- Uses Three.js Engine & GLTF Loader -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
+
+    <!-- Top Left Input Mode Icons -->
+    <div id="input-mode-box">
+        <div id="kb-icon" class="mode-icon active">
+            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-3 0h2v2H5v-2zm0-3h2v2H5V8zm11 10H8v-2h10v2zm0-5h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/></svg>
+            <span>[KB]</span>
+        </div>
+        <div id="gp-icon" class="mode-icon disabled">
+            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M15 7.5V2H9v5.5l3 3 3-3zM7.5 15H2v-6h5.5l3 3-3 3zm9 0l-3-3 3-3H22v6h-5.5zM12 13.5l-3 3V22h6v-5.5l-3-3z"/></svg>
+            <span>[GPad]</span>
+        </div>
+    </div>
 
     <!-- Start Prompt, Countdown & Game Over Overlays -->
     <div id="start-prompt" onclick="startSequence()">CLICK TO START</div>
@@ -240,7 +296,7 @@
         <button id="restart-btn" onclick="restartGame()">PLAY AGAIN</button>
     </div>
 
-    <!-- This is the Top HUD: Score, 6-Bar Indicator, Timer, Vehicle Orientation Dial & Cannon Angle -->
+    <!-- Top HUD: Score, 6-Bar Indicator, Timer, Vehicle Orientation Dial & Cannon Angle -->
     <div id="hud-top">
         <div id="score-box" class="hud-card">PTS: <span id="score-text">0</span></div>
         <div id="bars-box" class="hud-card">
@@ -262,11 +318,12 @@
 
     <div id="ui-overlay">
         <h1>OmniDriver Trainer</h1>
+        <p><strong>Toggle Control Mode:</strong> <kbd>CTRL</kbd> + <kbd>J</kbd></p>
         <p><strong>POV Controls:</strong> <kbd>CTRL</kbd> + <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></p>
-        <p><strong>Drive Vehicle:</strong> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></p>
-        <p><strong>Rotate Vehicle:</strong> <kbd>J</kbd> (Left) | <kbd>L</kbd> (Right)</p>
-        <p><strong>Cannon Pitch:</strong> <kbd>I</kbd> (Elevate) | <kbd>K</kbd> (Depress)</p>
-        <p><strong>Fire Cannon:</strong> <kbd>Spacebar</kbd></p>
+        <p><strong>Drive Vehicle:</strong> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> | <em>Left Stick</em></p>
+        <p><strong>Rotate Vehicle:</strong> <kbd>J</kbd> / <kbd>L</kbd> | <em>Right Stick (Horizontal)</em></p>
+        <p><strong>Cannon Pitch:</strong> <kbd>I</kbd> / <kbd>K</kbd> | <em>Triggers (RT / LT)</em></p>
+        <p><strong>Fire Cannon:</strong> <kbd>Spacebar</kbd> | <em>'A' Button</em></p>
         <p><strong>Active View:</strong> <span id="current-view" style="color:#2196F3;">1/2 (Center)</span></p>
     </div>
 
@@ -274,34 +331,36 @@
     <div id="canvas-container"></div>
 
     <script>
-        // GENERAL GAME PARAMETERS. May be modified for different difficulty levels or vehicle sizes.
-        // --- DIMENSIONS & CONSTANTS (distance values are aproximately in meters)---
+        // GENERAL GAME PARAMETERS
         const LENGTH = 14.0;          // Inner floor length (Z-axis)
         const WIDTH = 9.5;            // Inner floor width (X-axis)
         const WALL_HEIGHT = 0.6;      // Wall height
         const WALL_THICKNESS = 0.075; // Outward wall thickness
-        const EYE_HEIGHT = 1.65;       // Camera POV height
+        const EYE_HEIGHT = 1.65;      // Camera POV height
 
-        // some scaling was needed
-        const MIN_FOOTPRINT = WIDTH * 0.10; // 0.95m
-        const MAX_FOOTPRINT = WIDTH * 0.30; // 2.85m
+        const MIN_FOOTPRINT = WIDTH * 0.10;
+        const MAX_FOOTPRINT = WIDTH * 0.30;
 
         let scene, camera, renderer;
         let activeObstacles = [];
-        let activeExplosions = [];     // Particle explosion instances array
+        let activeExplosions = [];
         let vehicleMesh = null;
-        let vehicleRadius = 0.45;     // Dynamic bounding radius (updated on GLTF load)
+        let vehicleRadius = 0.45;
         let vehicleScaleFactor = 1.0;
         
         // --- GAME STATE VARIABLES ---
         let score = 0;
         let remainingBars = 6;
-        let gameActive = false;        // Driving & timer paused during countdown
+        let gameActive = false;
         let isGameOver = false;
         let sequenceStarted = false;
 
-        // AUDIO SYSTEM (Procedural Web Audio API). Makes kinda retrogame sounds, but saves work.
-        // No external files needed, and it's fun to play with waveforms, frequencies, and envelopes. All sounds are generated in real-time. :)
+        // --- INPUT MODE STATE ---
+        let controlMode = 'keyboard'; // 'keyboard' or 'gamepad'
+        let controllerAvailable = false;
+        let lastGamepadButtonA = false;
+
+        // AUDIO SYSTEM
         let audioCtx = null;
 
         function initAudio() {
@@ -469,7 +528,7 @@
             });
         }
 
-        // VEHICLE CONTROL VARIABLES... handle with care. They will affect the difficulty of the game and vehicle responsiveness.
+        // VEHICLE CONTROL VARIABLES
         const MAX_SPEED = 2.0;        // Max speed (2 m/s)
         const ACCELERATION = 2.0;     // Acceleration/Deceleration rate (2 m/s²)
         const ROTATION_SPEED = 2.0;   // Rotation speed (2.0 rad/s)
@@ -477,17 +536,12 @@
         let vx = 0.0;                 // Velocity X
         let vz = 0.0;                 // Velocity Z
 
-        // CANNON & PROJECTILE VARIABLES --- This affects how the cannon shoots the dart.
+        // CANNON & PROJECTILE VARIABLES
         const CANNON_SPEED = 2.5;                // Angular speed (2.5 rad/s)
         const MIN_CANNON_ANGLE = 0.0;            // 0 degrees
         const MAX_CANNON_ANGLE = Math.PI / 3;    // 60 degrees (in radians)
         const LAUNCH_SPEED = 7.0;                // Muzzle velocity (7.0 m/s)
-
-        // Gravity constant for projectile motion calculations. This is used to simulate the effect of gravity on the projectile after it is fired from the cannon.
-        // You may want to adjust it to simulate different gravitational environments or to make the game easier/harder.
-        // Want ideas? (Moon: 1.62 m/s², Mars: 3.71 m/s², Jupiter: 24.79 m/s²)
-        // Set GRAVITY=0 to make the dart like a laser beam.
-        const GRAVITY = 9.81;                    // Earth gravity acceleration (9.81 m/s²)
+        const GRAVITY = 9.81;                    // Earth gravity acceleration
 
         let cannonPivot = null;
         let cannonMesh = null;
@@ -501,15 +555,12 @@
             i: false, k: false
         };
 
-        // Timer Variables. You may adjust timerSeconds to give more time to complete a target set.
+        // Timer Variables
         let timerSeconds = 10.0;
         let lastTime = performance.now();
 
-        // Camera position right behind south wall
-        const STEPBACK_DISTANCE = 1.0; // How far back is the viewer standing behind the south wall.
-        // FRC drivers typically stand 0.75 to 1.0 meters behind the wall, so this is a reasonable distance for a training scenario.
+        const STEPBACK_DISTANCE = 1.0; 
         const cameraZ = -(LENGTH / 2) - WALL_THICKNESS - STEPBACK_DISTANCE; 
-        // This predefines POV positions (station 1, station 2, station 3) along the south wall. The user can switch between these positions using CTRL+1, CTRL+2, and CTRL+3.
         const povPositions = {
             1: { x: -WIDTH/2 + (WIDTH * (1/3)), y: EYE_HEIGHT, z: cameraZ, name: "1/3 Position" },
             2: { x: -WIDTH/2 + (WIDTH * (1/2)), y: EYE_HEIGHT, z: cameraZ, name: "1/2 Position (Center)" },
@@ -519,7 +570,6 @@
         init();
         animate();
 
-        // Gets the whole thing ready...
         function init() {
             // 1. Scene
             scene = new THREE.Scene();
@@ -553,20 +603,79 @@
             fillLight.position.set(-5, 10, 10);
             scene.add(fillLight);
 
-            // 5. Build Environment & Load Vehicle FIRST
+            // 5. Build Environment & Load Vehicle
             createFloor();
             createPerimeterWalls();
             loadVehicleModel();
             updateBarsHUD();
+            updateControlUI();
 
             // 6. Event Listeners
             window.addEventListener('resize', onWindowResize);
             window.addEventListener('keydown', onKeyDown);
             window.addEventListener('keyup', onKeyUp);
             window.addEventListener('pointerdown', initAudio);
+            window.addEventListener('gamepadconnected', onGamepadConnected);
+            window.addEventListener('gamepaddisconnected', onGamepadDisconnected);
         }
 
-        // --- BARS HUD UPDATE --- The BARS are the cycles or lives left. A bar will run out with a timer.
+        // --- CONTROL MODE UI ENGINE ---
+        function updateControlUI() {
+            const kbIcon = document.getElementById('kb-icon');
+            const gpIcon = document.getElementById('gp-icon');
+            if (!kbIcon || !gpIcon) return;
+
+            if (!controllerAvailable) {
+                gpIcon.className = 'mode-icon disabled';
+                kbIcon.className = 'mode-icon active';
+                controlMode = 'keyboard';
+            } else {
+                if (controlMode === 'keyboard') {
+                    kbIcon.className = 'mode-icon active';
+                    gpIcon.className = 'mode-icon';
+                } else {
+                    kbIcon.className = 'mode-icon';
+                    gpIcon.className = 'mode-icon active';
+                }
+            }
+        }
+
+        function pollGamepad() {
+            const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+            let activeGp = null;
+
+            for (let i = 0; i < gamepads.length; i++) {
+                if (gamepads[i] && gamepads[i].connected) {
+                    activeGp = gamepads[i];
+                    break;
+                }
+            }
+
+            const wasAvailable = controllerAvailable;
+            controllerAvailable = !!activeGp;
+
+            if (controllerAvailable !== wasAvailable) {
+                updateControlUI();
+            }
+
+            return activeGp;
+        }
+
+        function onGamepadConnected() {
+            controllerAvailable = true;
+            updateControlUI();
+        }
+
+        function onGamepadDisconnected() {
+            const activeGp = pollGamepad();
+            if (!activeGp) {
+                controllerAvailable = false;
+                controlMode = 'keyboard';
+                updateControlUI();
+            }
+        }
+
+        // --- BARS HUD UPDATE ---
         function updateBarsHUD() {
             const barElems = document.querySelectorAll('#bars-box .bar');
             barElems.forEach((bar, index) => {
@@ -629,14 +738,12 @@
             vx = 0;
             vz = 0;
 
-            // This will reset Vehicle Position to South Wall Center
             if (vehicleMesh) {
                 const initialZ = -(LENGTH / 2) + vehicleRadius + 0.3;
                 vehicleMesh.position.set(0, vehicleMesh.position.y, initialZ);
                 vehicleMesh.rotation.y = 0;
             }
 
-            // Remove Active Projectile if any
             if (activeProjectile) {
                 scene.remove(activeProjectile.mesh);
                 if (activeProjectile.mesh.geometry) activeProjectile.mesh.geometry.dispose();
@@ -659,7 +766,6 @@
             if (goElem) goElem.style.display = 'block';
         }
 
-        // SCORE ENGINE --- You can change this to modify scoring rules and promote scoring strategies.
         function addScore(points) {
             score += points;
             const scoreElem = document.getElementById('score-text');
@@ -668,7 +774,6 @@
             }
         }
 
-        // The DARK GREY FLOOR. I wanted to make the dark grey carpet... but I think this works.
         function createFloor() {
             const canvas = document.createElement('canvas');
             canvas.width = 512;
@@ -699,7 +804,6 @@
             scene.add(floor);
         }
 
-        // --- OUTWARD SILVER PERIMETER WALLS. Inspired by old faithful aluminum extrusion walls. I wanted to make them look like brushed aluminum, but I think this works.
         function createPerimeterWalls() {
             const wallMaterial = new THREE.MeshPhongMaterial({
                 color: 0xe0e0e0,
@@ -728,9 +832,6 @@
             scene.add(wallGroup);
         }
 
-        // LOAD PREMADE VEHICLE MODEL: The vehicle will be loaded from file 'vehicle.glb'. This is a GLTF 3D model file.
-        // I used a sample mechanum wheel robot model with an Arduino on top... LOL.
-        // Vehicle model is just visuals. Does not affect physics or collision detection. The vehicle's bounding radius is calculated from the model's dimensions.
         function loadVehicleModel() {
             const loader = new THREE.GLTFLoader();
 
@@ -812,7 +913,6 @@
             );
         }
 
-        // FIRE CANNON PROJECTILE!! ;)
         function fireCannon() {
             if (!gameActive || isGameOver || activeProjectile || !cannonMesh || !cannonPivot || !cannonMesh.visible) return;
 
@@ -856,7 +956,6 @@
             };
         }
 
-        // This is the CANNON ELEVATION CONTROL ---
         function updateCannon(delta) {
             if (!cannonPivot) return;
 
@@ -871,7 +970,6 @@
             cannonPivot.rotation.x = -cannonAngle;
         }
 
-        // Here comes the so very EXCITING PARTICLE EXPLOSION EFFECT!!
         function createExplosion(pos) {
             playExplosionSound();
 
@@ -939,7 +1037,6 @@
             });
         }
 
-        // UPDATE EXPLOSION PARTICLES & LIGHTS
         function updateExplosions(delta) {
             for (let e = activeExplosions.length - 1; e >= 0; e--) {
                 const exp = activeExplosions[e];
@@ -983,16 +1080,13 @@
             }
         }
 
-        // CHECK CLEAR FIELD & RESPAWN IMMEDIATELY (new object set)
         function checkFieldCleared() {
             if (activeObstacles.length === 0 && gameActive) {
-                // Reset timer immediately on clearing both objects, NO bar removed
                 timerSeconds = 10.0;
                 spawnObstacles();
             }
         }
 
-        // UPDATE BALLISTIC PROJECTILE PHYSICS
         function updateProjectile(delta) {
             if (!activeProjectile) return;
 
@@ -1056,19 +1150,63 @@
             }
         }
 
-        // VEHICLE MOVEMENT & COLLISION ENGINE. Do not expect super realistic collisions or careful bounding box calculations. This is a simple arcade-style collision detection and response system.
+        // VEHICLE MOVEMENT & GAMEPAD / KEYBOARD DYNAMICS (Thinking about using an X-box controller for this game)
         function updateVehicle(delta) {
             if (!vehicleMesh || !gameActive || isGameOver) return;
 
-            if (keys.j) vehicleMesh.rotation.y += ROTATION_SPEED * delta;
-            if (keys.l) vehicleMesh.rotation.y -= ROTATION_SPEED * delta;
-
             let dirX = 0, dirZ = 0;
-            if (keys.w) dirZ += 1;
-            if (keys.s) dirZ -= 1;
-            if (keys.a) dirX += 1;
-            if (keys.d) dirX -= 1;
+            const gp = pollGamepad();
 
+            if (controlMode === 'gamepad' && gp) {
+                // Deadzone filter
+                const dz = 0.15;
+
+                // 1. Left Stick: Controls X/Z Translation
+                const lx = gp.axes[0] || 0;
+                const ly = gp.axes[1] || 0;
+                if (Math.abs(lx) > dz) dirX = -lx;
+                if (Math.abs(ly) > dz) dirZ = -ly;
+
+                // 2. Right Stick (Horizontal): Controls Vehicle Rotation
+                let rx = gp.axes[2] || 0;
+                if (Math.abs(rx) <= dz && gp.axes[3] !== undefined && Math.abs(gp.axes[3]) > dz) {
+                    rx = gp.axes[3];
+                }
+                if (Math.abs(rx) > dz) {
+                    vehicleMesh.rotation.y -= rx * ROTATION_SPEED * delta;
+                }
+
+                // 3. Triggers: Elevate / Descend Cannon
+                const rt = gp.buttons[7] ? (typeof gp.buttons[7] === 'number' ? gp.buttons[7] : gp.buttons[7].value) : 0;
+                const lt = gp.buttons[6] ? (typeof gp.buttons[6] === 'number' ? gp.buttons[6] : gp.buttons[6].value) : 0;
+
+                if (rt > 0.1) cannonAngle += rt * CANNON_SPEED * delta;
+                if (lt > 0.1) cannonAngle -= lt * CANNON_SPEED * delta;
+
+                cannonAngle = Math.min(MAX_CANNON_ANGLE, Math.max(MIN_CANNON_ANGLE, cannonAngle));
+                if (cannonPivot) cannonPivot.rotation.x = -cannonAngle;
+
+                // 4. Button A: Fire Cannon
+                const btnA = gp.buttons[0] ? gp.buttons[0].pressed : false;
+                if (btnA && !lastGamepadButtonA) {
+                    fireCannon();
+                }
+                lastGamepadButtonA = btnA;
+
+            } else {
+                // Keyboard Mode Dynamics
+                if (keys.j) vehicleMesh.rotation.y += ROTATION_SPEED * delta;
+                if (keys.l) vehicleMesh.rotation.y -= ROTATION_SPEED * delta;
+
+                if (keys.w) dirZ += 1;
+                if (keys.s) dirZ -= 1;
+                if (keys.a) dirX += 1;
+                if (keys.d) dirX -= 1;
+
+                updateCannon(delta);
+            }
+
+            // Velocity acceleration & movement
             let targetVx = 0, targetVz = 0;
             const inputLen = Math.hypot(dirX, dirZ);
 
@@ -1149,8 +1287,6 @@
                 vehicleMesh.position.z = -maxZ;
                 vz = 0;
             }
-
-            updateCannon(delta);
         }
 
         // -UPDATE TOP HUD -
@@ -1232,7 +1368,6 @@
             ctx.restore();
         }
 
-        // OBSTACLE GENERATION & BOUNDS CHECK... we dont want obstacles too close to the vehicle or overlapping each other. This function will spawn a new set of obstacles in random positions and shapes.
         function spawnObstacles() {
             activeObstacles.forEach(obs => {
                 scene.remove(obs);
@@ -1311,7 +1446,6 @@
             });
         }
 
-        // TTIMER UPDATE LOOP & BAR DECAY
         function updateTimer(delta) {
             if (!gameActive || isGameOver) return;
 
@@ -1336,9 +1470,6 @@
             }
         }
 
-        // You can switch POV positions to simulate different positions along the driver area.
-        // CAMERA POV SWITCHING. Kind of cumbersome, but I wanted to give the player a choice of camera angles.
-        // When I port this to a VR viewer version or into an Oculus, I will have to rethink the camera system and controls. For now, this is a simple POV switcher.
         function setPOV(index) {
             const pov = povPositions[index];
             if (!pov) return;
@@ -1349,17 +1480,24 @@
             document.getElementById('current-view').innerText = pov.name;
         }
 
-        //KEYBOARD EVENT HANDLERS
+        // KEYBOARD & SHORTCUT EVENT HANDLERS
         function onKeyDown(event) {
             if (!sequenceStarted && !isGameOver) {
                 startSequence();
             }
 
             if (event.ctrlKey) {
-                if (event.key === '1') { event.preventDefault(); setPOV(3); }
-                else if (event.key === '2') { event.preventDefault(); setPOV(2); }
-                else if (event.key === '3') { event.preventDefault(); setPOV(1); }
-                return;
+                if (event.key === '1') { event.preventDefault(); setPOV(3); return; }
+                if (event.key === '2') { event.preventDefault(); setPOV(2); return; }
+                if (event.key === '3') { event.preventDefault(); setPOV(1); return; }
+                if (event.key === 'j' || event.key === 'J' || event.code === 'KeyJ') {
+                    event.preventDefault();
+                    if (controllerAvailable) {
+                        controlMode = (controlMode === 'keyboard') ? 'gamepad' : 'keyboard';
+                        updateControlUI();
+                    }
+                    return;
+                }
             }
 
             if (event.code === 'Space' || event.key === ' ') {
