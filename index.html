@@ -268,6 +268,69 @@
             box-shadow: 0 0 20px rgba(0, 229, 255, 0.8);
         }
 
+        /* Right Side Pre-Game Scrolling Objectives Box */
+        #objectives-box {
+            position: absolute;
+            top: 50%;
+            right: 25px;
+            transform: translateY(-50%);
+            width: 300px;
+            height: 350px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #00E5FF;
+            border-radius: 12px;
+            box-shadow: 0 0 25px rgba(0, 229, 255, 0.3);
+            z-index: 100;
+            padding: 18px 16px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            user-select: none;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        #objectives-box h2 {
+            margin: 0 0 12px 0;
+            font-size: 16px;
+            color: #00E5FF;
+            text-align: center;
+            letter-spacing: 1.5px;
+            border-bottom: 1px solid rgba(0, 229, 255, 0.3);
+            padding-bottom: 8px;
+            text-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+        }
+        .objectives-viewport {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+            mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+        }
+        .objectives-track {
+            display: flex;
+            flex-direction: column;
+            animation: scrollObjectives 22s linear infinite;
+        }
+        .objectives-track:hover {
+            animation-play-state: paused;
+        }
+        .objectives-list {
+            margin: 0;
+            padding-left: 20px;
+            list-style-type: decimal;
+        }
+        .objectives-list li {
+            color: #e0e0e0;
+            font-size: 13px;
+            line-height: 1.5;
+            margin-bottom: 14px;
+            font-weight: 500;
+        }
+        @keyframes scrollObjectives {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-50%); }
+        }
+
         #countdown-overlay {
             position: absolute;
             top: 50%;
@@ -348,7 +411,7 @@
         </div>
     </div>
 
-    <!-- Start Prompt, Countdown & Game Over Overlays -->
+    <!-- Start Prompt & Control Select Modal -->
     <div id="start-prompt">
         <h2>SELECT CONTROL MODE</h2>
         <div class="mode-select-group">
@@ -356,6 +419,39 @@
             <button id="btn-select-gp" class="mode-select-btn disabled" onclick="selectControlMode('gamepad', event)">[GP] GAMEPAD</button>
         </div>
         <button id="btn-start-game" onclick="startSequence()">START ROUND</button>
+    </div>
+
+    <!-- Right Side Scrolling Game Objectives Box -->
+    <div id="objectives-box">
+        <h2>GAME OBJECTIVES</h2>
+        <div class="objectives-viewport">
+            <div class="objectives-track">
+                <!-- First Set -->
+                <ol class="objectives-list">
+                    <li>Shoot the reds.</li>
+                    <li>Bump into the blues.</li>
+                    <li>You have 10s to complete a set.</li>
+                    <li>Completing a set restarts the timer. Missing a set respawns a set.</li>
+                    <li>Be efficient. You have an omnidirectional control vehicle.</li>
+                    <li>Be strategic.</li>
+                    <li>Be skillful.</li>
+                    <li>Be fast.</li>
+                    <li>Be exceptional!</li>
+                </ol>
+                <!-- Duplicate Set for Seamless Continuous Scrolling -->
+                <ol class="objectives-list">
+                    <li>Shoot the reds.</li>
+                    <li>Bump into the blues.</li>
+                    <li>You have 10s to complete a set.</li>
+                    <li>Completing a set restarts the timer. Missing a set respawns a set.</li>
+                    <li>Be efficient. You have an omnidirectional control vehicle.</li>
+                    <li>Be strategic.</li>
+                    <li>Be skillful.</li>
+                    <li>Be fast.</li>
+                    <li>Be exceptional!</li>
+                </ol>
+            </div>
+        </div>
     </div>
 
     <div id="countdown-overlay">3</div>
@@ -800,6 +896,9 @@
 
             const promptElem = document.getElementById('start-prompt');
             if (promptElem) promptElem.style.display = 'none';
+
+            const objElem = document.getElementById('objectives-box');
+            if (objElem) objElem.style.display = 'none';
 
             const countOverlay = document.getElementById('countdown-overlay');
             countOverlay.style.display = 'block';
