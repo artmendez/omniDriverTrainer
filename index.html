@@ -524,6 +524,25 @@
         let isGameOver = false;
         let sequenceStarted = false;
 
+        // --- BACKGROUND MIDI MUSIC ---
+        const bgMidi = new Audio('mz_545_1.mid');
+        bgMidi.loop = true;
+
+        function playBgMidi() {
+            if (bgMidi && !sequenceStarted) {
+                bgMidi.play().catch(() => {
+                    // Browser autoplay policies may defer playback until the first user interaction
+                });
+            }
+        }
+
+        function stopBgMidi() {
+            if (bgMidi) {
+                bgMidi.pause();
+                bgMidi.currentTime = 0;
+            }
+        }
+
         // --- INPUT MODE STATE ---
         let controlMode = 'keyboard'; // 'keyboard' or 'gamepad'
         let controllerAvailable = false;
@@ -535,6 +554,7 @@
         let audioCtx = null;
 
         function initAudio() {
+            playBgMidi();
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             }
@@ -743,6 +763,9 @@
         animate();
 
         function init() {
+            // Start playing initial screen background MIDI
+            playBgMidi();
+
             // 1. Scene
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x1a1a24);
@@ -893,6 +916,7 @@
 
         // START COUNTDOWN SEQUENCE 
         function startSequence() {
+            stopBgMidi(); // Stop background MIDI when sequence starts
             initAudio();
             if (sequenceStarted) return;
             sequenceStarted = true;
