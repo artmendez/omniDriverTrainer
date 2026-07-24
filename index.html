@@ -35,9 +35,9 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            z-index: 20;
+            z-index: 120;
             user-select: none;
-            pointer-events: none;
+            pointer-events: auto;
         }
         .mode-icon {
             display: flex;
@@ -54,6 +54,7 @@
             font-size: 13px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.5);
             transition: all 0.25s ease;
+            cursor: pointer;
         }
         .mode-icon svg {
             fill: currentColor;
@@ -68,6 +69,7 @@
             opacity: 0.35;
             border-color: #222233;
             color: #444455;
+            cursor: not-allowed;
         }
 
         /* Top Center HUD Container */
@@ -183,29 +185,89 @@
             background-color: #0b7dda;
         }
 
-        /* Countdown & Start Prompts */
+        /* Pre-Round Start Prompt & Control Select Modal */
         #start-prompt {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.9);
+            background: rgba(0, 0, 0, 0.92);
             color: #ffffff;
             border: 2px solid #2196F3;
-            padding: 24px 48px;
-            border-radius: 12px;
-            font-size: 24px;
-            font-weight: bold;
-            cursor: pointer;
+            padding: 28px 42px;
+            border-radius: 14px;
             z-index: 100;
-            box-shadow: 0 0 25px rgba(33, 150, 243, 0.6);
+            box-shadow: 0 0 30px rgba(33, 150, 243, 0.5);
             text-align: center;
             user-select: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 320px;
         }
-        #start-prompt:hover {
-            background: rgba(10, 25, 50, 0.95);
+        #start-prompt h2 {
+            margin: 0 0 16px 0;
+            font-size: 20px;
+            color: #00E5FF;
+            font-family: 'Courier New', Courier, monospace;
+            letter-spacing: 1px;
+        }
+        .mode-select-group {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-bottom: 22px;
+            width: 100%;
+        }
+        .mode-select-btn {
+            flex: 1;
+            padding: 10px 16px;
+            background: #1a1a24;
+            border: 2px solid #444455;
+            color: #888899;
+            border-radius: 8px;
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .mode-select-btn:hover:not(.disabled) {
             border-color: #00E5FF;
+            color: #ffffff;
         }
+        .mode-select-btn.active {
+            border-color: #00E5FF;
+            color: #00E5FF;
+            background: rgba(0, 229, 255, 0.15);
+            box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+        }
+        .mode-select-btn.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            border-color: #333344;
+            color: #555566;
+        }
+        #btn-start-game {
+            width: 100%;
+            padding: 12px 24px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 18px;
+            font-weight: bold;
+            font-family: 'Courier New', Courier, monospace;
+            cursor: pointer;
+            box-shadow: 0 0 15px rgba(33, 150, 243, 0.4);
+            transition: all 0.2s ease;
+        }
+        #btn-start-game:hover {
+            background: #00E5FF;
+            color: #000000;
+            box-shadow: 0 0 20px rgba(0, 229, 255, 0.8);
+        }
+
         #countdown-overlay {
             position: absolute;
             top: 50%;
@@ -276,18 +338,26 @@
 
     <!-- Top Left Input Mode Icons -->
     <div id="input-mode-box">
-        <div id="kb-icon" class="mode-icon active">
+        <div id="kb-icon" class="mode-icon active" onclick="selectControlMode('keyboard', event)">
             <svg width="18" height="18" viewBox="0 0 24 24"><path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-3 0h2v2H5v-2zm0-3h2v2H5V8zm11 10H8v-2h10v2zm0-5h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/></svg>
             <span>[KB]</span>
         </div>
-        <div id="gp-icon" class="mode-icon disabled">
+        <div id="gp-icon" class="mode-icon disabled" onclick="selectControlMode('gamepad', event)">
             <svg width="18" height="18" viewBox="0 0 24 24"><path d="M15 7.5V2H9v5.5l3 3 3-3zM7.5 15H2v-6h5.5l3 3-3 3zm9 0l-3-3 3-3H22v6h-5.5zM12 13.5l-3 3V22h6v-5.5l-3-3z"/></svg>
             <span>[GPad]</span>
         </div>
     </div>
 
     <!-- Start Prompt, Countdown & Game Over Overlays -->
-    <div id="start-prompt" onclick="startSequence()">CLICK TO START</div>
+    <div id="start-prompt">
+        <h2>SELECT CONTROL MODE</h2>
+        <div class="mode-select-group">
+            <button id="btn-select-kb" class="mode-select-btn active" onclick="selectControlMode('keyboard', event)">[KB] KEYBOARD</button>
+            <button id="btn-select-gp" class="mode-select-btn disabled" onclick="selectControlMode('gamepad', event)">[GP] GAMEPAD</button>
+        </div>
+        <button id="btn-start-game" onclick="startSequence()">START ROUND</button>
+    </div>
+
     <div id="countdown-overlay">3</div>
 
     <div id="gameover-overlay">
@@ -318,8 +388,8 @@
 
     <div id="ui-overlay">
         <h1>OmniDriver Trainer</h1>
-        <p><strong>Toggle Control Mode:</strong> <kbd>CTRL</kbd> + <kbd>J</kbd></p>
-        <p><strong>POV Controls:</strong> <kbd>CTRL</kbd> + <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></p>
+        <p><strong>Toggle Control Mode:</strong> <kbd>CTRL</kbd> + <kbd>J</kbd> | <em>Click UI Mode Icons</em></p>
+        <p><strong>POV Controls:</strong> <kbd>CTRL</kbd> + <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> | <em>Bumpers (LB: 1-2-3 | RB: 3-2-1)</em></p>
         <p><strong>Drive Vehicle:</strong> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> | <em>Left Stick</em></p>
         <p><strong>Rotate Vehicle:</strong> <kbd>J</kbd> / <kbd>L</kbd> | <em>Right Stick (Horizontal)</em></p>
         <p><strong>Cannon Pitch:</strong> <kbd>I</kbd> / <kbd>K</kbd> | <em>Triggers (RT / LT)</em></p>
@@ -359,6 +429,8 @@
         let controlMode = 'keyboard'; // 'keyboard' or 'gamepad'
         let controllerAvailable = false;
         let lastGamepadButtonA = false;
+        let lastGamepadButtonLB = false;
+        let lastGamepadButtonRB = false;
 
         // AUDIO SYSTEM
         let audioCtx = null;
@@ -566,6 +638,7 @@
             2: { x: -WIDTH/2 + (WIDTH * (1/2)), y: EYE_HEIGHT, z: cameraZ, name: "1/2 Position (Center)" },
             3: { x: -WIDTH/2 + (WIDTH * (2/3)), y: EYE_HEIGHT, z: cameraZ, name: "2/3 Position" }
         };
+        let currentPOVIndex = 2;
 
         init();
         animate();
@@ -608,6 +681,7 @@
             createPerimeterWalls();
             loadVehicleModel();
             updateBarsHUD();
+            pollGamepad();
             updateControlUI();
 
             // 6. Event Listeners
@@ -619,23 +693,54 @@
             window.addEventListener('gamepaddisconnected', onGamepadDisconnected);
         }
 
-        // --- CONTROL MODE UI ENGINE ---
+        // --- EXPLICIT CONTROL SELECTION & SYNC ---
+        function selectControlMode(mode, event) {
+            if (event) event.stopPropagation();
+            initAudio();
+
+            if (mode === 'gamepad') {
+                const gp = pollGamepad();
+                if (!gp && !controllerAvailable) {
+                    alert("No Gamepad detected! Please connect a controller via USB or Bluetooth and press any button.");
+                    controlMode = 'keyboard';
+                    updateControlUI();
+                    return;
+                }
+                controlMode = 'gamepad';
+            } else {
+                controlMode = 'keyboard';
+            }
+            updateControlUI();
+        }
+
         function updateControlUI() {
             const kbIcon = document.getElementById('kb-icon');
             const gpIcon = document.getElementById('gp-icon');
-            if (!kbIcon || !gpIcon) return;
+            const btnKb = document.getElementById('btn-select-kb');
+            const btnGp = document.getElementById('btn-select-gp');
 
-            if (!controllerAvailable) {
-                gpIcon.className = 'mode-icon disabled';
-                kbIcon.className = 'mode-icon active';
+            const activeGp = pollGamepad();
+
+            if (!controllerAvailable && !activeGp) {
+                if (gpIcon) gpIcon.className = 'mode-icon disabled';
+                if (kbIcon) kbIcon.className = 'mode-icon active';
+                if (btnGp) { btnGp.className = 'mode-select-btn disabled'; }
+                if (btnKb) { btnKb.className = 'mode-select-btn active'; }
                 controlMode = 'keyboard';
             } else {
+                if (gpIcon) gpIcon.classList.remove('disabled');
+                if (btnGp) btnGp.classList.remove('disabled');
+
                 if (controlMode === 'keyboard') {
-                    kbIcon.className = 'mode-icon active';
-                    gpIcon.className = 'mode-icon';
+                    if (kbIcon) kbIcon.className = 'mode-icon active';
+                    if (gpIcon) gpIcon.className = 'mode-icon';
+                    if (btnKb) btnKb.className = 'mode-select-btn active';
+                    if (btnGp) btnGp.className = 'mode-select-btn';
                 } else {
-                    kbIcon.className = 'mode-icon';
-                    gpIcon.className = 'mode-icon active';
+                    if (kbIcon) kbIcon.className = 'mode-icon';
+                    if (gpIcon) gpIcon.className = 'mode-icon active';
+                    if (btnKb) btnKb.className = 'mode-select-btn';
+                    if (btnGp) btnGp.className = 'mode-select-btn active';
                 }
             }
         }
@@ -1150,7 +1255,7 @@
             }
         }
 
-        // VEHICLE MOVEMENT & GAMEPAD / KEYBOARD DYNAMICS (Thinking about using an X-box controller for this game)
+        // VEHICLE MOVEMENT & GAMEPAD / KEYBOARD DYNAMICS
         function updateVehicle(delta) {
             if (!vehicleMesh || !gameActive || isGameOver) return;
 
@@ -1192,6 +1297,23 @@
                     fireCannon();
                 }
                 lastGamepadButtonA = btnA;
+
+                // 5. Left Bumper (LB) / Right Bumper (RB): Cycle POV Positions
+                const btnLB = gp.buttons[4] ? gp.buttons[4].pressed : false;
+                if (btnLB && !lastGamepadButtonLB) {
+                    let nextPOV = currentPOVIndex + 1;
+                    if (nextPOV > 3) nextPOV = 1;
+                    setPOV(nextPOV);
+                }
+                lastGamepadButtonLB = btnLB;
+
+                const btnRB = gp.buttons[5] ? gp.buttons[5].pressed : false;
+                if (btnRB && !lastGamepadButtonRB) {
+                    let nextPOV = currentPOVIndex - 1;
+                    if (nextPOV < 1) nextPOV = 3;
+                    setPOV(nextPOV);
+                }
+                lastGamepadButtonRB = btnRB;
 
             } else {
                 // Keyboard Mode Dynamics
@@ -1289,7 +1411,7 @@
             }
         }
 
-        // -UPDATE TOP HUD -
+        // UPDATE TOP HUD
         function updateHUD() {
             const cannonDeg = (cannonAngle * 180 / Math.PI).toFixed(1);
             const cannonElem = document.getElementById('cannon-text');
@@ -1478,14 +1600,11 @@
             camera.lookAt(pov.x, 0.1, 1.0);
 
             document.getElementById('current-view').innerText = pov.name;
+            currentPOVIndex = index;
         }
 
         // KEYBOARD & SHORTCUT EVENT HANDLERS
         function onKeyDown(event) {
-            if (!sequenceStarted && !isGameOver) {
-                startSequence();
-            }
-
             if (event.ctrlKey) {
                 if (event.key === '1') { event.preventDefault(); setPOV(3); return; }
                 if (event.key === '2') { event.preventDefault(); setPOV(2); return; }
@@ -1493,8 +1612,7 @@
                 if (event.key === 'j' || event.key === 'J' || event.code === 'KeyJ') {
                     event.preventDefault();
                     if (controllerAvailable) {
-                        controlMode = (controlMode === 'keyboard') ? 'gamepad' : 'keyboard';
-                        updateControlUI();
+                        selectControlMode(controlMode === 'keyboard' ? 'gamepad' : 'keyboard');
                     }
                     return;
                 }
